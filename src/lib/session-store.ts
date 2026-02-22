@@ -1,9 +1,20 @@
 import type { ConnectionPool } from "mssql";
 import type { ConnectionConfig } from "@/types/db";
 
-// Module-level singletons — live in server memory only, never serialized or sent to client
-const credentialStore = new Map<string, ConnectionConfig>();
-const poolStore = new Map<string, ConnectionPool>();
+// Anchored to `global` so Turbopack/webpack HMR module reloads in dev
+// don't reset the Maps and wipe in-memory credentials.
+declare global {
+  // eslint-disable-next-line no-var
+  var __credentialStore: Map<string, ConnectionConfig> | undefined;
+  // eslint-disable-next-line no-var
+  var __poolStore: Map<string, ConnectionPool> | undefined;
+}
+
+const credentialStore: Map<string, ConnectionConfig> =
+  global.__credentialStore ?? (global.__credentialStore = new Map());
+
+const poolStore: Map<string, ConnectionPool> =
+  global.__poolStore ?? (global.__poolStore = new Map());
 
 export function getCredentials(sessionId: string): ConnectionConfig | undefined {
   return credentialStore.get(sessionId);
