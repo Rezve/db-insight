@@ -35,6 +35,7 @@ export default function SqlEditor() {
   const [sql, setSql] = useState("SELECT TOP 100 * FROM ");
   const [activeTab, setActiveTab] = useState("results");
   const [statsEnabled, setStatsEnabled] = useState(false);
+  const [hasSelection, setHasSelection] = useState(false);
 
   // Load schema for autocomplete once on mount
   useEffect(() => {
@@ -129,15 +130,38 @@ export default function SqlEditor() {
     monacoRef.current = monacoInstance;
     registerCompletionProvider(monacoInstance);
 
-    // Ctrl+Enter to run
+    // Track whether the user has an active text selection
+    editorInstance.onDidChangeCursorSelection((e) => {
+      const sel = e.selection;
+      setHasSelection(
+        !(sel.startLineNumber === sel.endLineNumber && sel.startColumn === sel.endColumn)
+      );
+    });
+
+    // Ctrl+Enter to run (selected text if any, otherwise full query)
     editorInstance.addCommand(
       monacoInstance.KeyMod.CtrlCmd | monacoInstance.KeyCode.Enter,
-      () => runQuery(editorInstance.getValue())
+      () => runQuery()
     );
   }
 
   async function runQuery(queryText?: string) {
-    const rawSql = queryText ?? editorRef.current?.getValue() ?? sql;
+    let rawSql: string;
+    if (queryText !== undefined) {
+      rawSql = queryText;
+    } else {
+      const editorInstance = editorRef.current;
+      if (editorInstance) {
+        const sel = editorInstance.getSelection();
+        const model = editorInstance.getModel();
+        rawSql =
+          sel && model && !sel.isEmpty()
+            ? model.getValueInRange(sel)
+            : editorInstance.getValue();
+      } else {
+        rawSql = sql;
+      }
+    }
     if (!rawSql.trim()) {
       toast.warning("Enter a SQL query first");
       return;
@@ -184,14 +208,15 @@ export default function SqlEditor() {
           size="sm"
           onClick={() => runQuery()}
           disabled={running}
-          className="gap-1.5"
+          className="gap-1.5 min-w-[8rem] justify-center"
+          title={hasSelection ? "Run selected text (Ctrl+Enter)" : "Run query (Ctrl+Enter)"}
         >
           {running ? (
             <Loader2 className="h-4 w-4 animate-spin" />
           ) : (
             <Play className="h-4 w-4" />
           )}
-          Run
+          {hasSelection ? "Run Selected" : "Run"}
         </Button>
         <span className="text-xs text-muted-foreground">or Ctrl+Enter</span>
         <div className="mx-2 h-4 w-px bg-border" />
