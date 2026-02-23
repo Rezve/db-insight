@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/session";
 import { executeQuery } from "@/lib/db";
-import { SQL_INDEX_INFO } from "@/lib/sql-queries";
+import { SQL_INDEX_INFO, SQL_INDEX_SIZES } from "@/lib/sql-queries";
 import type { IndexInfo } from "@/types/analysis";
 import sql from "mssql";
 
@@ -20,21 +20,34 @@ export async function GET(req: NextRequest) {
 
     const [schema, tableName] = table.split(".", 2);
 
-    const rows = await executeQuery<{
-      indexName: string | null;
-      indexId: number;
-      type: string;
-      isUnique: boolean;
-      isPrimaryKey: boolean;
-      isDisabled: boolean;
-      filterDefinition: string | null;
-      columnName: string | null;
-      isIncluded: boolean;
-      keyOrdinal: number;
-    }>(session.sessionId, SQL_INDEX_INFO, {
+    const params = {
       schema: { type: sql.NVarChar(128), value: schema },
       tableName: { type: sql.NVarChar(128), value: tableName },
-    });
+    };
+
+    const [rows, sizeRows] = await Promise.all([
+      executeQuery<{
+        indexName: string | null;
+        indexId: number;
+        type: string;
+        isUnique: boolean;
+        isPrimaryKey: boolean;
+        isDisabled: boolean;
+        filterDefinition: string | null;
+        columnName: string | null;
+        isIncluded: boolean;
+        keyOrdinal: number;
+      }>(session.sessionId, SQL_INDEX_INFO, params),
+      executeQuery<{ indexId: number; sizeGB: number }>(
+        session.sessionId,
+        SQL_INDEX_SIZES,
+        params
+      ),
+    ]);
+
+    const sizeMap = new Map<number, number>(
+      sizeRows.map((r) => [r.indexId, Number(r.sizeGB)])
+    );
 
     // Group columns by index
     const indexMap = new Map<number, IndexInfo>();
@@ -49,6 +62,7 @@ export async function GET(req: NextRequest) {
           isDisabled: Boolean(row.isDisabled),
           filterDefinition: row.filterDefinition,
           columns: [],
+          sizeGB: sizeMap.get(row.indexId),
         });
       }
       if (row.columnName) {

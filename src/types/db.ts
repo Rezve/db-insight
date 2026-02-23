@@ -13,6 +13,7 @@ export interface TableInfo {
   name: string;
   fullName: string;
   type: "BASE TABLE" | "VIEW";
+  sizeGB?: number;
 }
 
 export interface ColumnInfo {

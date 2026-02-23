@@ -44,6 +44,7 @@ export interface IndexInfo {
   isDisabled: boolean;
   filterDefinition: string | null;
   columns: IndexColumn[];
+  sizeGB?: number;
 }
 
 export interface IndexUsageStat {

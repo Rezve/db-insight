@@ -24,7 +24,7 @@ export default function TableCard({ table }: TableCardProps) {
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <Badge variant="outline" className="text-xs font-mono text-muted-foreground">
               {table.schema}
             </Badge>
@@ -34,6 +34,15 @@ export default function TableCard({ table }: TableCardProps) {
               </Badge>
             )}
           </div>
+          {table.sizeGB != null && (
+            <p className="text-xs text-muted-foreground mt-2 tabular-nums">
+              {table.sizeGB >= 1
+                ? `${table.sizeGB.toFixed(2)} GB`
+                : table.sizeGB * 1024 >= 1
+                ? `${(table.sizeGB * 1024).toFixed(1)} MB`
+                : `${(table.sizeGB * 1024 * 1024).toFixed(0)} KB`}
+            </p>
+          )}
         </CardContent>
       </Card>
     </Link>

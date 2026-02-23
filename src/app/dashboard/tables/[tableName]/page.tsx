@@ -17,6 +17,7 @@ import ColumnDistribution from "@/components/analysis/ColumnDistribution";
 import IndexList from "@/components/analysis/IndexList";
 import IndexUsageStats from "@/components/analysis/IndexUsageStats";
 import MissingIndexes from "@/components/analysis/MissingIndexes";
+import TableSizeCard from "@/components/analysis/TableSizeCard";
 import type { SampleSize } from "@/types/analysis";
 
 const FULL_SCAN_WARN_THRESHOLD = 500_000;
@@ -82,6 +83,7 @@ export default function TableAnalysisPage({ params }: PageProps) {
         <TabsContent value="overview" className="space-y-4">
           <div className="flex flex-wrap gap-4">
             <RowCountCard tableName={tableName} onRowCount={handleRowCount} />
+            <TableSizeCard tableName={tableName} />
           </div>
           <div className="text-sm text-muted-foreground max-w-prose space-y-2">
             <p>

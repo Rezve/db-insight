@@ -51,6 +51,7 @@ export default function IndexList({ tableName }: IndexListProps) {
               <TableHead>Type</TableHead>
               <TableHead>Key Columns</TableHead>
               <TableHead>Included Columns</TableHead>
+              <TableHead>Size (GB)</TableHead>
               <TableHead>Properties</TableHead>
             </TableRow>
           </TableHeader>
@@ -79,6 +80,13 @@ export default function IndexList({ tableName }: IndexListProps) {
                   </TableCell>
                   <TableCell className="font-mono text-xs text-muted-foreground max-w-[200px]">
                     {includedColumns.join(", ") || "—"}
+                  </TableCell>
+                  <TableCell className="text-xs tabular-nums text-right">
+                    {idx.sizeGB != null
+                      ? idx.sizeGB < 0.001
+                        ? "< 0.001"
+                        : idx.sizeGB.toFixed(3)
+                      : "—"}
                   </TableCell>
                   <TableCell>
                     <div className="flex gap-1 flex-wrap">

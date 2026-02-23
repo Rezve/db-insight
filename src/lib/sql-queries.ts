@@ -95,6 +95,35 @@ WHERE s.name = @schema
 ORDER BY i.index_id, ic.is_included_column, ic.key_ordinal
 `;
 
+export const SQL_INDEX_SIZES = `
+SELECT
+    i.index_id                                                           AS [indexId],
+    CAST(
+        ROUND(SUM(ps.reserved_page_count) * 8192.0 / (1024.0 * 1024.0 * 1024.0), 4)
+    AS DECIMAL(18, 4))                                                   AS [sizeGB]
+FROM sys.indexes i
+INNER JOIN sys.tables  t  ON i.object_id = t.object_id
+INNER JOIN sys.schemas s  ON t.schema_id = s.schema_id
+INNER JOIN sys.dm_db_partition_stats ps
+    ON i.object_id = ps.object_id AND i.index_id = ps.index_id
+WHERE s.name = @schema
+  AND t.name = @tableName
+GROUP BY i.index_id
+`;
+
+export const SQL_TABLE_SIZES = `
+SELECT
+    s.name                                                               AS [schema],
+    t.name                                                               AS [name],
+    CAST(
+        ROUND(SUM(ps.reserved_page_count) * 8192.0 / (1024.0 * 1024.0 * 1024.0), 4)
+    AS DECIMAL(18, 4))                                                   AS [sizeGB]
+FROM sys.tables t
+INNER JOIN sys.schemas s ON t.schema_id = s.schema_id
+INNER JOIN sys.dm_db_partition_stats ps ON t.object_id = ps.object_id
+GROUP BY s.name, t.name
+`;
+
 export const SQL_INDEX_USAGE = `
 SELECT
     i.name                          AS [indexName],
