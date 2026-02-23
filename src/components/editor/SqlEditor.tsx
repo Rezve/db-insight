@@ -5,8 +5,11 @@ import dynamic from "next/dynamic";
 import type { editor, languages, IRange } from "monaco-editor";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { Play, Loader2, Trash2, Clock } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { Play, Loader2, Trash2, Clock, BarChart2 } from "lucide-react";
 import ResultsTable from "./ResultsTable";
+import StatisticsPanel from "./StatisticsPanel";
 import type { SchemaData } from "@/types/db";
 
 // Monaco must not be SSR'd
@@ -20,6 +23,7 @@ interface QueryResult {
   truncated: boolean;
   error?: string;
   lineNumber?: number;
+  statistics?: string[];
 }
 
 export default function SqlEditor() {
@@ -29,6 +33,8 @@ export default function SqlEditor() {
   const [result, setResult] = useState<QueryResult | null>(null);
   const [running, setRunning] = useState(false);
   const [sql, setSql] = useState("SELECT TOP 100 * FROM ");
+  const [activeTab, setActiveTab] = useState("results");
+  const [statsEnabled, setStatsEnabled] = useState(false);
 
   // Load schema for autocomplete once on mount
   useEffect(() => {
@@ -131,11 +137,15 @@ export default function SqlEditor() {
   }
 
   async function runQuery(queryText?: string) {
-    const sqlText = queryText ?? editorRef.current?.getValue() ?? sql;
-    if (!sqlText.trim()) {
+    const rawSql = queryText ?? editorRef.current?.getValue() ?? sql;
+    if (!rawSql.trim()) {
       toast.warning("Enter a SQL query first");
       return;
     }
+
+    const sqlText = statsEnabled
+      ? `SET STATISTICS IO ON;\nSET STATISTICS TIME ON;\n${rawSql}\nSET STATISTICS IO OFF;\nSET STATISTICS TIME OFF;`
+      : rawSql;
 
     setRunning(true);
     setResult(null);
@@ -153,9 +163,11 @@ export default function SqlEditor() {
         if (data.truncated) {
           toast.info(`Results truncated to 1,000 rows (total: ${data.rowCount})`);
         }
+        setActiveTab(data.statistics?.length ? "statistics" : "results");
       } else {
         setResult({ ...data, columns: [], rows: [], rowCount: 0, durationMs: 0, truncated: false });
         toast.error(data.error ?? "Query failed");
+        setActiveTab(data.statistics?.length ? "statistics" : "results");
       }
     } catch {
       toast.error("Network error");
@@ -182,6 +194,17 @@ export default function SqlEditor() {
           Run
         </Button>
         <span className="text-xs text-muted-foreground">or Ctrl+Enter</span>
+        <div className="mx-2 h-4 w-px bg-border" />
+        <Button
+          size="sm"
+          variant={statsEnabled ? "default" : "outline"}
+          onClick={() => setStatsEnabled((v) => !v)}
+          className="gap-1.5 text-xs"
+          title={statsEnabled ? "Statistics IO/TIME ON — click to disable" : "Enable Statistics IO/TIME for every query"}
+        >
+          <BarChart2 className="h-3.5 w-3.5" />
+          Statistics {statsEnabled ? "ON" : "OFF"}
+        </Button>
         <div className="flex-1" />
         {result && !result.error && (
           <span className="flex items-center gap-1 text-xs text-muted-foreground">
@@ -226,10 +249,26 @@ export default function SqlEditor() {
         />
       </div>
 
-      {/* Results */}
-      <div className="flex-1 overflow-auto border-t bg-background min-h-0">
-        <ResultsTable result={result} loading={running} />
-      </div>
+      {/* Results / Statistics Tabs */}
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="flex flex-col border-t min-h-0" style={{ flex: "1 1 0", overflow: "hidden" }}>
+        <TabsList className="mx-3 mt-2 mb-1 w-fit h-8 shrink-0">
+          <TabsTrigger value="results" className="text-xs px-3 h-6">Results</TabsTrigger>
+          <TabsTrigger value="statistics" className="text-xs px-3 h-6 gap-1.5">
+            Statistics
+            {result?.statistics?.length ? (
+              <Badge variant="secondary" className="text-[10px] px-1 py-0 h-4 min-w-4">
+                {result.statistics.length}
+              </Badge>
+            ) : null}
+          </TabsTrigger>
+        </TabsList>
+        <TabsContent value="results" className="flex-1 overflow-auto min-h-0 mt-0 data-[state=inactive]:hidden">
+          <ResultsTable result={result} loading={running} />
+        </TabsContent>
+        <TabsContent value="statistics" className="flex-1 overflow-auto min-h-0 mt-0 data-[state=inactive]:hidden">
+          <StatisticsPanel messages={result?.statistics ?? []} />
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }

@@ -48,4 +48,5 @@ export interface QueryResult {
   truncated: boolean;
   error?: string;
   lineNumber?: number;
+  statistics?: string[];
 }

@@ -19,8 +19,13 @@ export async function POST(req: NextRequest) {
     const pool = await getOrCreatePool(session.sessionId);
     const start = Date.now();
 
+    const statistics: string[] = [];
+
     try {
       const request = pool.request();
+      request.on("info", (info: { message: string }) => {
+        if (info.message?.trim()) statistics.push(info.message);
+      });
       const result = await request.query(sql);
       const durationMs = Date.now() - start;
 
@@ -46,6 +51,7 @@ export async function POST(req: NextRequest) {
         durationMs,
         truncated,
         rowsAffected: result.rowsAffected,
+        statistics,
       });
     } catch (queryErr) {
       const durationMs = Date.now() - start;
@@ -55,9 +61,12 @@ export async function POST(req: NextRequest) {
           error: err.message,
           lineNumber: err.lineNumber,
           durationMs,
+          statistics,
         },
         { status: 400 }
       );
+    } finally {
+      // request is local — no listener cleanup needed
     }
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unexpected error";
