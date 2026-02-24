@@ -7,9 +7,11 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { Play, Loader2, Trash2, Clock, BarChart2 } from "lucide-react";
+import { Play, Loader2, Trash2, Clock, BarChart2, GitBranch } from "lucide-react";
 import ResultsTable from "./ResultsTable";
 import StatisticsPanel from "./StatisticsPanel";
+import QueryPlanVisualizer from "./QueryPlanVisualizer";
+import QueryPlanText from "./QueryPlanText";
 import type { SchemaData } from "@/types/db";
 
 // Monaco must not be SSR'd
@@ -24,18 +26,23 @@ interface QueryResult {
   error?: string;
   lineNumber?: number;
   statistics?: string[];
+  planXml?: string;
 }
 
 export default function SqlEditor() {
   const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null);
   const monacoRef = useRef<typeof import("monaco-editor") | null>(null);
   const schemaRef = useRef<SchemaData | null>(null);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const dragState = useRef<{ startY: number; startHeight: number } | null>(null);
   const [result, setResult] = useState<QueryResult | null>(null);
   const [running, setRunning] = useState(false);
   const [sql, setSql] = useState("SELECT TOP 100 * FROM ");
   const [activeTab, setActiveTab] = useState("results");
   const [statsEnabled, setStatsEnabled] = useState(false);
+  const [planEnabled, setPlanEnabled] = useState(false);
   const [hasSelection, setHasSelection] = useState(false);
+  const [editorHeightPx, setEditorHeightPx] = useState(260);
 
   // Load schema for autocomplete once on mount
   useEffect(() => {
@@ -167,9 +174,21 @@ export default function SqlEditor() {
       return;
     }
 
-    const sqlText = statsEnabled
-      ? `SET STATISTICS IO ON;\nSET STATISTICS TIME ON;\n${rawSql}\nSET STATISTICS IO OFF;\nSET STATISTICS TIME OFF;`
-      : rawSql;
+    // Build SQL with optional wrappers (stats and/or plan)
+    const prefixParts: string[] = [];
+    const suffixParts: string[] = [];
+    if (statsEnabled) {
+      prefixParts.push("SET STATISTICS IO ON;", "SET STATISTICS TIME ON;");
+      suffixParts.unshift("SET STATISTICS IO OFF;", "SET STATISTICS TIME OFF;");
+    }
+    if (planEnabled) {
+      prefixParts.push("SET STATISTICS XML ON;");
+      suffixParts.unshift("SET STATISTICS XML OFF;");
+    }
+    const sqlText =
+      prefixParts.length > 0
+        ? `${prefixParts.join("\n")}\n${rawSql}\n${suffixParts.join("\n")}`
+        : rawSql;
 
     setRunning(true);
     setResult(null);
@@ -178,7 +197,7 @@ export default function SqlEditor() {
       const res = await fetch("/api/query", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sql: sqlText }),
+        body: JSON.stringify({ sql: sqlText, planEnabled }),
       });
       const data = await res.json();
 
@@ -187,7 +206,13 @@ export default function SqlEditor() {
         if (data.truncated) {
           toast.info(`Results truncated to 1,000 rows (total: ${data.rowCount})`);
         }
-        setActiveTab(data.statistics?.length ? "statistics" : "results");
+        if (data.planXml) {
+          setActiveTab("visualPlan");
+        } else if (data.statistics?.length) {
+          setActiveTab("statistics");
+        } else {
+          setActiveTab("results");
+        }
       } else {
         setResult({ ...data, columns: [], rows: [], rowCount: 0, durationMs: 0, truncated: false });
         toast.error(data.error ?? "Query failed");
@@ -200,8 +225,37 @@ export default function SqlEditor() {
     }
   }
 
+  const handleDragStart = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    dragState.current = { startY: e.clientY, startHeight: editorHeightPx };
+
+    const onMove = (ev: MouseEvent) => {
+      if (!dragState.current || !containerRef.current) return;
+      const containerH = containerRef.current.clientHeight;
+      const delta = ev.clientY - dragState.current.startY;
+      const next = dragState.current.startHeight + delta;
+      // Clamp: editor min 80px, leave at least 120px for results panel
+      const min = 80;
+      const max = containerH - 120;
+      setEditorHeightPx(Math.max(min, Math.min(max, next)));
+    };
+
+    const onUp = () => {
+      dragState.current = null;
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onUp);
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+    };
+
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onUp);
+    document.body.style.cursor = "row-resize";
+    document.body.style.userSelect = "none";
+  }, [editorHeightPx]);
+
   return (
-    <div className="flex flex-col h-full">
+    <div ref={containerRef} className="flex flex-col h-full">
       {/* Toolbar */}
       <div className="flex items-center gap-2 px-4 py-2 border-b bg-zinc-50 dark:bg-zinc-900">
         <Button
@@ -230,6 +284,16 @@ export default function SqlEditor() {
           <BarChart2 className="h-3.5 w-3.5" />
           Statistics {statsEnabled ? "ON" : "OFF"}
         </Button>
+        <Button
+          size="sm"
+          variant={planEnabled ? "default" : "outline"}
+          onClick={() => setPlanEnabled((v) => !v)}
+          className="gap-1.5 text-xs"
+          title={planEnabled ? "Query Plan ON — click to disable" : "Enable execution plan capture"}
+        >
+          <GitBranch className="h-3.5 w-3.5" />
+          Query Plan {planEnabled ? "ON" : "OFF"}
+        </Button>
         <div className="flex-1" />
         {result && !result.error && (
           <span className="flex items-center gap-1 text-xs text-muted-foreground">
@@ -252,7 +316,7 @@ export default function SqlEditor() {
       </div>
 
       {/* Editor */}
-      <div className="flex-1 min-h-0" style={{ minHeight: "200px", maxHeight: "50vh" }}>
+      <div style={{ height: editorHeightPx, minHeight: 80, flexShrink: 0 }}>
         <MonacoEditor
           defaultLanguage="sql"
           value={sql}
@@ -274,8 +338,18 @@ export default function SqlEditor() {
         />
       </div>
 
+      {/* Drag handle */}
+      <div
+        onMouseDown={handleDragStart}
+        className="group relative flex items-center justify-center shrink-0 border-t border-b"
+        style={{ height: 8, cursor: "row-resize" }}
+        title="Drag to resize panels"
+      >
+        <div className="w-12 h-1 rounded-full bg-border group-hover:bg-zinc-400 dark:group-hover:bg-zinc-500 transition-colors" />
+      </div>
+
       {/* Results / Statistics Tabs */}
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="flex flex-col border-t min-h-0" style={{ flex: "1 1 0", overflow: "hidden" }}>
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="flex flex-col min-h-0" style={{ flex: "1 1 0", overflow: "hidden" }}>
         <TabsList className="mx-3 mt-2 mb-1 w-fit h-8 shrink-0">
           <TabsTrigger value="results" className="text-xs px-3 h-6">Results</TabsTrigger>
           <TabsTrigger value="statistics" className="text-xs px-3 h-6 gap-1.5">
@@ -286,12 +360,29 @@ export default function SqlEditor() {
               </Badge>
             ) : null}
           </TabsTrigger>
+          <TabsTrigger value="visualPlan" className="text-xs px-3 h-6 gap-1.5">
+            Visual Plan
+            {result?.planXml ? (
+              <Badge variant="secondary" className="text-[10px] px-1 py-0 h-4 min-w-4">
+                <GitBranch className="h-2.5 w-2.5" />
+              </Badge>
+            ) : null}
+          </TabsTrigger>
+          <TabsTrigger value="planText" className="text-xs px-3 h-6">
+            Plan Text
+          </TabsTrigger>
         </TabsList>
         <TabsContent value="results" className="flex-1 overflow-auto min-h-0 mt-0 data-[state=inactive]:hidden">
           <ResultsTable result={result} loading={running} />
         </TabsContent>
         <TabsContent value="statistics" className="flex-1 overflow-auto min-h-0 mt-0 data-[state=inactive]:hidden">
           <StatisticsPanel messages={result?.statistics ?? []} />
+        </TabsContent>
+        <TabsContent value="visualPlan" className="flex-1 overflow-hidden min-h-0 mt-0 data-[state=inactive]:hidden">
+          <QueryPlanVisualizer planXml={result?.planXml} />
+        </TabsContent>
+        <TabsContent value="planText" className="flex-1 overflow-hidden min-h-0 mt-0 data-[state=inactive]:hidden">
+          <QueryPlanText planXml={result?.planXml} />
         </TabsContent>
       </Tabs>
     </div>

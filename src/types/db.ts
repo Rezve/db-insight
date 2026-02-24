@@ -50,4 +50,5 @@ export interface QueryResult {
   error?: string;
   lineNumber?: number;
   statistics?: string[];
+  planXml?: string;
 }
