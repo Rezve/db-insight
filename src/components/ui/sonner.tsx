@@ -7,11 +7,24 @@ import {
   OctagonXIcon,
   TriangleAlertIcon,
 } from "lucide-react"
+import { useEffect } from "react"
 import { useTheme } from "next-themes"
-import { Toaster as Sonner, type ToasterProps } from "sonner"
+import { toast, Toaster as Sonner, type ToasterProps } from "sonner"
 
 const Toaster = ({ ...props }: ToasterProps) => {
   const { theme = "system" } = useTheme()
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      const toastEl = (e.target as Element).closest("[data-sonner-toast]")
+      if (toastEl) {
+        const id = toastEl.getAttribute("data-id")
+        if (id) toast.dismiss(id)
+      }
+    }
+    document.addEventListener("click", handler)
+    return () => document.removeEventListener("click", handler)
+  }, [])
 
   return (
     <Sonner

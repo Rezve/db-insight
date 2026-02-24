@@ -124,3 +124,15 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* Reposition sonner close button to top-right inside the toast */
+[data-sonner-toast] [data-close-button] {
+  left: auto !important;
+  right: 0 !important;
+  transform: translate(35%, -35%) !important;
+}
+
+/* Click anywhere on toast to dismiss */
+[data-sonner-toast] {
+  cursor: pointer !important;
+}
