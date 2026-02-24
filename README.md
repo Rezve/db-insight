@@ -1,36 +1,96 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# DB Analysis
+
+A local-only SQL Server analysis tool built with Next.js. Connect to any SQL Server or Azure SQL database and explore its schema, run queries, analyze table distributions, inspect indexes, and visualize execution plans — all from a browser UI with credentials that never leave your machine.
+
+## Features
+
+- **Secure connection management** — credentials stored server-side in memory, never exposed to the browser
+- **SQL Editor** — Monaco-based editor with SQL autocomplete, run selected text, execution plan visualization, and STATISTICS IO/TIME capture
+- **Table Analysis** — per-table tabs for overview, data distribution charts, index details, and missing index recommendations
+- **Index Insights** — current index structure, seek/scan/lookup usage metrics from DMVs, and SQL Server's missing index suggestions
+- **Column Distribution** — selectivity analysis and data distribution histograms using column statistics
+- **Dark mode** support
+
+## Tech Stack
+
+| Layer | Technology |
+|---|---|
+| Framework | Next.js 16 (App Router) + React 19 + TypeScript |
+| Styling | Tailwind CSS v4 (CSS-based config) + shadcn/ui |
+| Editor | Monaco Editor with SQL autocomplete |
+| Charts | Recharts |
+| Database | mssql v11 (SQL Server / Azure SQL) |
+| Session | iron-session (encrypted cookie, server-side pool store) |
 
 ## Getting Started
 
-First, run the development server:
+### Prerequisites
+
+- Node.js 18+
+- Access to a SQL Server or Azure SQL instance
+
+### Setup
+
+```bash
+npm install
+```
+
+Create a `.env.local` file:
+
+```env
+SESSION_SECRET=your-32-char-or-longer-secret-here
+```
+
+Start the dev server:
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:3000](http://localhost:3000) and connect to your database.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Project Structure
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```
+src/
+├── app/
+│   ├── connect/              # Login page
+│   ├── dashboard/            # Database overview (tables + views)
+│   │   ├── editor/           # SQL editor page
+│   │   └── tables/[name]/    # Per-table analysis (Overview / Distribution / Indexes / Missing Indexes)
+│   └── api/
+│       ├── connect/          # Authenticate + create connection pool
+│       ├── disconnect/       # Close session
+│       ├── query/            # Execute SQL + return plan / statistics
+│       ├── schema/           # Tables, columns, procedures, functions
+│       └── analysis/         # Row count, table size, indexes, distribution
+├── components/
+│   ├── editor/               # SqlEditor, ResultsTable, QueryPlanVisualizer, StatisticsPanel
+│   ├── analysis/             # ColumnDistribution, IndexList, MissingIndexes, SelectivityPanel
+│   ├── dashboard/            # Header, Sidebar, TableCard
+│   └── ui/                   # shadcn/ui primitives
+└── lib/
+    ├── session.ts            # iron-session config
+    ├── session-store.ts      # In-memory credential + pool stores
+    ├── db.ts                 # executeQuery() helper
+    └── sql-queries.ts        # All SQL strings + buildSampleClause()
+```
 
-## Learn More
+## Security Notes
 
-To learn more about Next.js, take a look at the following resources:
+- Credentials are stored in a server-side `Map` keyed by session ID — they are never serialized into the cookie or sent to the client
+- The iron-session cookie contains only a random `sessionId`
+- One `mssql.ConnectionPool` is maintained per session and reused across requests
+- This tool is designed for **local use only** — do not expose it to a public network
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Sample Size Strategy
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+When querying large tables for analysis, three sample sizes are available:
 
-## Deploy on Vercel
+| Size | Method |
+|---|---|
+| Small | `SELECT TOP 1000 ... WITH (NOLOCK)` |
+| Medium | `SELECT TOP 10000 ... WITH (NOLOCK)` |
+| Full | No TOP limit — warns if row count exceeds 500k |
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+`TABLESAMPLE` is avoided — it is unreliable on small tables.
