@@ -376,7 +376,10 @@ export default function SqlEditor() {
           <ResultsTable result={result} loading={running} />
         </TabsContent>
         <TabsContent value="statistics" className="flex-1 overflow-auto min-h-0 mt-0 data-[state=inactive]:hidden">
-          <StatisticsPanel messages={result?.statistics ?? []} />
+          <StatisticsPanel
+          messages={result?.statistics ?? []}
+          onEnable={statsEnabled ? undefined : () => setStatsEnabled(true)}
+        />
         </TabsContent>
         <TabsContent value="visualPlan" className="flex-1 overflow-hidden min-h-0 mt-0 data-[state=inactive]:hidden">
           <QueryPlanVisualizer planXml={result?.planXml} />

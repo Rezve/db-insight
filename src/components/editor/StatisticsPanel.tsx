@@ -1,7 +1,8 @@
 "use client";
 
 import { useMemo } from "react";
-import { ChevronDown } from "lucide-react";
+import { ChevronDown, BarChart2 } from "lucide-react";
+import { Button } from "@/components/ui/button";
 
 interface IoStat {
   table: string;
@@ -85,19 +86,23 @@ function parseStatistics(messages: string[]): ParsedStatistics {
 
 interface StatisticsPanelProps {
   messages: string[];
+  onEnable?: () => void;
 }
 
-export default function StatisticsPanel({ messages }: StatisticsPanelProps) {
+export default function StatisticsPanel({ messages, onEnable }: StatisticsPanelProps) {
   const stats = useMemo(() => parseStatistics(messages), [messages]);
 
   if (messages.length === 0) {
     return (
-      <div className="flex items-center justify-center h-full text-muted-foreground text-sm p-8">
-        No statistics data — add{" "}
-        <code className="mx-1 px-1.5 py-0.5 rounded bg-muted font-mono text-xs">
-          SET STATISTICS IO ON; SET STATISTICS TIME ON
-        </code>{" "}
-        to your query
+      <div className="flex flex-col items-center justify-center h-full gap-3 text-muted-foreground text-sm p-8 text-center">
+        <BarChart2 className="h-8 w-8 opacity-40" />
+        <p>No statistics data yet.</p>
+        {onEnable && (
+          <Button size="sm" variant="outline" className="gap-1.5 text-xs" onClick={onEnable}>
+            <BarChart2 className="h-3.5 w-3.5" />
+            Enable Statistics
+          </Button>
+        )}
       </div>
     );
   }
