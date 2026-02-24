@@ -29,18 +29,43 @@ interface QueryResult {
   planXml?: string;
 }
 
-export default function SqlEditor() {
+interface SqlEditorProps {
+  tabId: string;
+  sql: string;
+  onSqlChange: (sql: string) => void;
+  result: QueryResult | null;
+  onResultChange: (result: QueryResult | null) => void;
+  running: boolean;
+  onRunningChange: (running: boolean) => void;
+  statsEnabled: boolean;
+  onStatsEnabledChange: (v: boolean) => void;
+  planEnabled: boolean;
+  onPlanEnabledChange: (v: boolean) => void;
+  activeResultTab: string;
+  onActiveResultTabChange: (tab: string) => void;
+}
+
+export default function SqlEditor({
+  tabId,
+  sql,
+  onSqlChange,
+  result,
+  onResultChange,
+  running,
+  onRunningChange,
+  statsEnabled,
+  onStatsEnabledChange,
+  planEnabled,
+  onPlanEnabledChange,
+  activeResultTab,
+  onActiveResultTabChange,
+}: SqlEditorProps) {
   const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null);
   const monacoRef = useRef<typeof import("monaco-editor") | null>(null);
   const schemaRef = useRef<SchemaData | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const dragState = useRef<{ startY: number; startHeight: number } | null>(null);
-  const [result, setResult] = useState<QueryResult | null>(null);
-  const [running, setRunning] = useState(false);
-  const [sql, setSql] = useState("SELECT TOP 100 * FROM ");
-  const [activeTab, setActiveTab] = useState("results");
-  const [statsEnabled, setStatsEnabled] = useState(false);
-  const [planEnabled, setPlanEnabled] = useState(false);
+  const prevTabId = useRef(tabId);
   const [hasSelection, setHasSelection] = useState(false);
   const [editorHeightPx, setEditorHeightPx] = useState(260);
 
@@ -53,6 +78,14 @@ export default function SqlEditor() {
       })
       .catch(() => {});
   }, []);
+
+  // Sync Monaco content when switching tabs
+  useEffect(() => {
+    if (prevTabId.current !== tabId && editorRef.current) {
+      editorRef.current.setValue(sql);
+      prevTabId.current = tabId;
+    }
+  }, [tabId, sql]);
 
   const registerCompletionProvider = useCallback(
     (monacoInstance: typeof import("monaco-editor")) => {
@@ -190,8 +223,8 @@ export default function SqlEditor() {
         ? `${prefixParts.join("\n")}\n${rawSql}\n${suffixParts.join("\n")}`
         : rawSql;
 
-    setRunning(true);
-    setResult(null);
+    onRunningChange(true);
+    onResultChange(null);
 
     try {
       const res = await fetch("/api/query", {
@@ -202,26 +235,26 @@ export default function SqlEditor() {
       const data = await res.json();
 
       if (res.ok) {
-        setResult(data);
+        onResultChange(data);
         if (data.truncated) {
           toast.info(`Results truncated to 1,000 rows (total: ${data.rowCount})`);
         }
         if (data.planXml) {
-          setActiveTab("visualPlan");
+          onActiveResultTabChange("visualPlan");
         } else if (data.statistics?.length) {
-          setActiveTab("statistics");
+          onActiveResultTabChange("statistics");
         } else {
-          setActiveTab("results");
+          onActiveResultTabChange("results");
         }
       } else {
-        setResult({ ...data, columns: [], rows: [], rowCount: 0, durationMs: 0, truncated: false });
+        onResultChange({ ...data, columns: [], rows: [], rowCount: 0, durationMs: 0, truncated: false });
         toast.error(data.error ?? "Query failed");
-        setActiveTab(data.statistics?.length ? "statistics" : "results");
+        onActiveResultTabChange(data.statistics?.length ? "statistics" : "results");
       }
     } catch {
       toast.error("Network error");
     } finally {
-      setRunning(false);
+      onRunningChange(false);
     }
   }
 
@@ -262,7 +295,7 @@ export default function SqlEditor() {
           size="sm"
           onClick={() => runQuery()}
           disabled={running}
-          className="gap-1.5 min-w-[8rem] justify-center"
+          className="gap-1.5 min-w-32 justify-center"
           title={hasSelection ? "Run selected text (Ctrl+Enter)" : "Run query (Ctrl+Enter)"}
         >
           {running ? (
@@ -277,7 +310,7 @@ export default function SqlEditor() {
         <Button
           size="sm"
           variant={statsEnabled ? "default" : "outline"}
-          onClick={() => setStatsEnabled((v) => !v)}
+          onClick={() => onStatsEnabledChange(!statsEnabled)}
           className="gap-1.5 text-xs"
           title={statsEnabled ? "Statistics IO/TIME ON — click to disable" : "Enable Statistics IO/TIME for every query"}
         >
@@ -287,7 +320,7 @@ export default function SqlEditor() {
         <Button
           size="sm"
           variant={planEnabled ? "default" : "outline"}
-          onClick={() => setPlanEnabled((v) => !v)}
+          onClick={() => onPlanEnabledChange(!planEnabled)}
           className="gap-1.5 text-xs"
           title={planEnabled ? "Query Plan ON — click to disable" : "Enable execution plan capture"}
         >
@@ -306,8 +339,8 @@ export default function SqlEditor() {
           variant="ghost"
           onClick={() => {
             editorRef.current?.setValue("");
-            setSql("");
-            setResult(null);
+            onSqlChange("");
+            onResultChange(null);
           }}
           title="Clear editor"
         >
@@ -319,8 +352,8 @@ export default function SqlEditor() {
       <div style={{ height: editorHeightPx, minHeight: 80, flexShrink: 0 }}>
         <MonacoEditor
           defaultLanguage="sql"
-          value={sql}
-          onChange={(v) => setSql(v ?? "")}
+          defaultValue={sql}
+          onChange={(v) => onSqlChange(v ?? "")}
           onMount={handleEditorDidMount}
           theme="vs"
           options={{
@@ -349,7 +382,7 @@ export default function SqlEditor() {
       </div>
 
       {/* Results / Statistics Tabs */}
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="flex flex-col min-h-0" style={{ flex: "1 1 0", overflow: "hidden" }}>
+      <Tabs value={activeResultTab} onValueChange={onActiveResultTabChange} className="flex flex-col min-h-0" style={{ flex: "1 1 0", overflow: "hidden" }}>
         <TabsList className="mx-3 mt-2 mb-1 w-fit h-8 shrink-0">
           <TabsTrigger value="results" className="text-xs px-3 h-6">Results</TabsTrigger>
           <TabsTrigger value="statistics" className="text-xs px-3 h-6 gap-1.5">
@@ -377,9 +410,9 @@ export default function SqlEditor() {
         </TabsContent>
         <TabsContent value="statistics" className="flex-1 overflow-auto min-h-0 mt-0 data-[state=inactive]:hidden">
           <StatisticsPanel
-          messages={result?.statistics ?? []}
-          onEnable={statsEnabled ? undefined : () => setStatsEnabled(true)}
-        />
+            messages={result?.statistics ?? []}
+            onEnable={statsEnabled ? undefined : () => onStatsEnabledChange(true)}
+          />
         </TabsContent>
         <TabsContent value="visualPlan" className="flex-1 overflow-hidden min-h-0 mt-0 data-[state=inactive]:hidden">
           <QueryPlanVisualizer planXml={result?.planXml} />
