@@ -49,7 +49,7 @@ export default function Sidebar({ tables }: SidebarProps) {
         <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider px-2 py-1">
           Tables ({tables.length})
         </p>
-        <ScrollArea className="flex-1">
+        <ScrollArea className="flex-1 min-h-0">
           <nav className="space-y-0.5 pr-2">
             {tables.map((table) => {
               const href = `/dashboard/tables/${encodeURIComponent(table.fullName)}`;
