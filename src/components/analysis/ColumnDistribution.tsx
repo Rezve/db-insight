@@ -63,7 +63,7 @@ function ColumnCard({ col }: { col: ColumnStat }) {
           {col.nullCount > 0 && (
             <StatBadge label="Null" value={col.nullCount.toLocaleString()} />
           )}
-          {col.minValue !== undefined && (
+          {col.minValue != null && (
             <>
               <StatBadge label="Min" value={Number(col.minValue.toFixed(2)).toLocaleString()} />
               <StatBadge label="Max" value={Number(col.maxValue?.toFixed(2)).toLocaleString()} />

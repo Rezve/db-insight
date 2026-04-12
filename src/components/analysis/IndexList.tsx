@@ -75,10 +75,10 @@ export default function IndexList({ tableName }: IndexListProps) {
                       {idx.type}
                     </Badge>
                   </TableCell>
-                  <TableCell className="font-mono text-xs max-w-[200px]">
+                  <TableCell className="font-mono text-xs max-w-[200px] whitespace-normal break-words">
                     {keyColumns.join(", ") || "—"}
                   </TableCell>
-                  <TableCell className="font-mono text-xs text-muted-foreground max-w-[200px]">
+                  <TableCell className="font-mono text-xs text-muted-foreground max-w-[200px] whitespace-normal break-words">
                     {includedColumns.join(", ") || "—"}
                   </TableCell>
                   <TableCell className="text-xs tabular-nums text-right">
