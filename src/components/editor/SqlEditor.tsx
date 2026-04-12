@@ -7,7 +7,8 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { Play, Loader2, Trash2, Clock, BarChart2, GitBranch } from "lucide-react";
+import { Play, Loader2, Trash2, Clock, BarChart2, GitBranch, WandSparkles } from "lucide-react";
+import { format as formatSql } from "sql-formatter";
 import ResultsTable from "./ResultsTable";
 import StatisticsPanel from "./StatisticsPanel";
 import QueryPlanVisualizer from "./QueryPlanVisualizer";
@@ -183,6 +184,49 @@ export default function SqlEditor({
       monacoInstance.KeyMod.CtrlCmd | monacoInstance.KeyCode.Enter,
       () => runQuery()
     );
+
+    // Alt+Shift+F to format
+    editorInstance.addCommand(
+      monacoInstance.KeyMod.Alt | monacoInstance.KeyMod.Shift | monacoInstance.KeyCode.KeyF,
+      () => formatQuery()
+    );
+  }
+
+  function formatQuery() {
+    const editorInstance = editorRef.current;
+    if (!editorInstance) return;
+
+    const model = editorInstance.getModel();
+    const sel = editorInstance.getSelection();
+    const hasActiveSelection = sel && model && !sel.isEmpty();
+
+    const rawSql = hasActiveSelection
+      ? model!.getValueInRange(sel!)
+      : editorInstance.getValue();
+
+    if (!rawSql.trim()) {
+      toast.warning("Nothing to format");
+      return;
+    }
+
+    let formatted: string;
+    try {
+      formatted = formatSql(rawSql, { language: "tsql", tabWidth: 2, keywordCase: "upper" });
+    } catch {
+      toast.error("Could not format the query");
+      return;
+    }
+
+    editorInstance.pushUndoStop();
+    if (hasActiveSelection) {
+      editorInstance.executeEdits("format", [{ range: sel!, text: formatted }]);
+    } else {
+      const fullRange = model!.getFullModelRange();
+      editorInstance.executeEdits("format", [{ range: fullRange, text: formatted }]);
+      onSqlChange(formatted);
+    }
+    editorInstance.pushUndoStop();
+    toast.success(hasActiveSelection ? "Selection formatted" : "Query formatted");
   }
 
   async function runQuery(queryText?: string) {
@@ -306,6 +350,16 @@ export default function SqlEditor({
           {hasSelection ? "Run Selected" : "Run"}
         </Button>
         <span className="text-xs text-muted-foreground">or Ctrl+Enter</span>
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={formatQuery}
+          className="gap-1.5 text-xs"
+          title={hasSelection ? "Format selected SQL (Alt+Shift+F)" : "Format all SQL (Alt+Shift+F)"}
+        >
+          <WandSparkles className="h-3.5 w-3.5" />
+          {hasSelection ? "Format Selected" : "Format"}
+        </Button>
         <div className="mx-2 h-4 w-px bg-border" />
         <Button
           size="sm"
