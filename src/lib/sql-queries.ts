@@ -174,6 +174,59 @@ WHERE mid.database_id = DB_ID()
 ORDER BY improvementMeasure DESC
 `;
 
+export const SQL_TABLE_COLUMNS = `
+SELECT
+    c.ORDINAL_POSITION            AS [ordinal],
+    c.COLUMN_NAME                 AS [columnName],
+    c.DATA_TYPE                   AS [dataType],
+    c.CHARACTER_MAXIMUM_LENGTH    AS [maxLength],
+    c.NUMERIC_PRECISION           AS [numericPrecision],
+    c.NUMERIC_SCALE               AS [numericScale],
+    c.IS_NULLABLE                 AS [isNullable],
+    c.COLUMN_DEFAULT              AS [columnDefault],
+    CAST(COLUMNPROPERTY(
+        OBJECT_ID(QUOTENAME(c.TABLE_SCHEMA) + '.' + QUOTENAME(c.TABLE_NAME)),
+        c.COLUMN_NAME, 'IsIdentity'
+    ) AS BIT)                     AS [isIdentity],
+    CAST(CASE WHEN pk.COLUMN_NAME IS NOT NULL THEN 1 ELSE 0 END AS BIT) AS [isPrimaryKey],
+    fk_ref.referenced_schema      AS [fkSchema],
+    fk_ref.referenced_table       AS [fkTable],
+    fk_ref.referenced_column      AS [fkColumn]
+FROM INFORMATION_SCHEMA.COLUMNS c
+LEFT JOIN (
+    SELECT kcu.COLUMN_NAME
+    FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS tc
+    JOIN INFORMATION_SCHEMA.KEY_COLUMN_USAGE kcu
+        ON tc.CONSTRAINT_NAME = kcu.CONSTRAINT_NAME
+        AND tc.TABLE_SCHEMA   = kcu.TABLE_SCHEMA
+    WHERE tc.CONSTRAINT_TYPE = 'PRIMARY KEY'
+      AND tc.TABLE_SCHEMA    = @schema
+      AND tc.TABLE_NAME      = @tableName
+) pk ON c.COLUMN_NAME = pk.COLUMN_NAME
+LEFT JOIN (
+    SELECT
+        kcu.COLUMN_NAME,
+        kcu2.TABLE_SCHEMA AS referenced_schema,
+        kcu2.TABLE_NAME   AS referenced_table,
+        kcu2.COLUMN_NAME  AS referenced_column
+    FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS tc
+    JOIN INFORMATION_SCHEMA.KEY_COLUMN_USAGE kcu
+        ON tc.CONSTRAINT_NAME = kcu.CONSTRAINT_NAME
+        AND tc.TABLE_SCHEMA   = kcu.TABLE_SCHEMA
+    JOIN INFORMATION_SCHEMA.REFERENTIAL_CONSTRAINTS rc
+        ON tc.CONSTRAINT_NAME = rc.CONSTRAINT_NAME
+    JOIN INFORMATION_SCHEMA.KEY_COLUMN_USAGE kcu2
+        ON rc.UNIQUE_CONSTRAINT_NAME = kcu2.CONSTRAINT_NAME
+        AND kcu.ORDINAL_POSITION     = kcu2.ORDINAL_POSITION
+    WHERE tc.CONSTRAINT_TYPE = 'FOREIGN KEY'
+      AND tc.TABLE_SCHEMA    = @schema
+      AND tc.TABLE_NAME      = @tableName
+) fk_ref ON c.COLUMN_NAME = fk_ref.COLUMN_NAME
+WHERE c.TABLE_SCHEMA = @schema
+  AND c.TABLE_NAME   = @tableName
+ORDER BY c.ORDINAL_POSITION
+`;
+
 export function synthesizeMissingIndexDDL(
   equalityColumns: string | null,
   inequalityColumns: string | null,

@@ -59,6 +59,22 @@ export interface IndexUsageStat {
   lastUserLookup: string | null;
 }
 
+export interface TableColumnDetail {
+  ordinal: number;
+  columnName: string;
+  dataType: string;
+  maxLength: number | null;
+  numericPrecision: number | null;
+  numericScale: number | null;
+  isNullable: boolean;
+  columnDefault: string | null;
+  isIdentity: boolean;
+  isPrimaryKey: boolean;
+  fkSchema: string | null;
+  fkTable: string | null;
+  fkColumn: string | null;
+}
+
 export interface MissingIndex {
   improvementMeasure: number;
   avgTotalCost: number;

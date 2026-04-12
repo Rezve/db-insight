@@ -18,6 +18,7 @@ import IndexList from "@/components/analysis/IndexList";
 import IndexUsageStats from "@/components/analysis/IndexUsageStats";
 import MissingIndexes from "@/components/analysis/MissingIndexes";
 import TableSizeCard from "@/components/analysis/TableSizeCard";
+import TableSchema from "@/components/analysis/TableSchema";
 import type { SampleSize } from "@/types/analysis";
 
 const FULL_SCAN_WARN_THRESHOLD = 500_000;
@@ -73,6 +74,7 @@ export default function TableAnalysisPage({ params }: PageProps) {
         <div className="flex items-center justify-between flex-wrap gap-3">
           <TabsList>
             <TabsTrigger value="overview">Overview</TabsTrigger>
+            <TabsTrigger value="schema">Schema</TabsTrigger>
             <TabsTrigger value="distribution">Distribution</TabsTrigger>
             <TabsTrigger value="indexes">Indexes</TabsTrigger>
             <TabsTrigger value="missing">Missing Indexes</TabsTrigger>
@@ -96,6 +98,10 @@ export default function TableAnalysisPage({ params }: PageProps) {
               is fastest; Full scans the entire table.
             </p>
           </div>
+        </TabsContent>
+
+        <TabsContent value="schema">
+          <TableSchema tableName={tableName} />
         </TabsContent>
 
         <TabsContent value="distribution">
