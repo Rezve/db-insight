@@ -17,17 +17,20 @@ interface QueryResult {
   planXml?: string;
 }
 
-type ResultTabName = "results" | "statistics" | "visualPlan" | "planText";
+type ResultTabName = "results" | "statistics" | "visualPlan" | "planText" | "compare";
 
 interface TabState {
   id: string;
   name: string;
   sql: string;
   result: QueryResult | null;
+  previousResult: QueryResult | null;
+  previousSql: string | null;
   running: boolean;
   activeResultTab: ResultTabName;
   statsEnabled: boolean;
   planEnabled: boolean;
+  compareEnabled: boolean;
 }
 
 let tabCounter = 1;
@@ -38,10 +41,13 @@ function createTab(name?: string, sql?: string): TabState {
     name: name ?? `Query ${tabCounter++}`,
     sql: sql ?? "SELECT TOP 100 * FROM ",
     result: null,
+    previousResult: null,
+    previousSql: null,
     running: false,
     activeResultTab: "results",
     statsEnabled: false,
     planEnabled: false,
+    compareEnabled: false,
   };
 }
 
@@ -213,12 +219,25 @@ export default function EditorTabsManager() {
           onSqlChange={(sql) => updateTab(activeTab.id, { sql })}
           result={activeTab.result}
           onResultChange={(result) => updateTab(activeTab.id, { result })}
+          previousResult={activeTab.previousResult}
+          previousSql={activeTab.previousSql}
+          onRunComplete={(result, previousResult, previousSql) =>
+            updateTab(activeTab.id, { result, previousResult, previousSql })
+          }
           running={activeTab.running}
           onRunningChange={(running) => updateTab(activeTab.id, { running })}
           statsEnabled={activeTab.statsEnabled}
           onStatsEnabledChange={(statsEnabled) => updateTab(activeTab.id, { statsEnabled })}
           planEnabled={activeTab.planEnabled}
           onPlanEnabledChange={(planEnabled) => updateTab(activeTab.id, { planEnabled })}
+          compareEnabled={activeTab.compareEnabled}
+          onCompareEnabledChange={(compareEnabled) =>
+            updateTab(activeTab.id, {
+              compareEnabled,
+              // Clear stale baseline when disabling compare.
+              ...(compareEnabled ? {} : { previousResult: null, previousSql: null }),
+            })
+          }
           activeResultTab={activeTab.activeResultTab}
           onActiveResultTabChange={(activeResultTab) => updateTab(activeTab.id, { activeResultTab: activeResultTab as ResultTabName })}
         />

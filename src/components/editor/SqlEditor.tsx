@@ -8,12 +8,13 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { Play, Loader2, Trash2, Clock, BarChart2, GitBranch, WandSparkles } from "lucide-react";
+import { Play, Loader2, Trash2, Clock, BarChart2, GitBranch, GitCompare, WandSparkles } from "lucide-react";
 import { format as formatSql } from "sql-formatter";
 import ResultsTable from "./ResultsTable";
 import StatisticsPanel from "./StatisticsPanel";
 import QueryPlanVisualizer from "./QueryPlanVisualizer";
 import QueryPlanText from "./QueryPlanText";
+import CompareView from "./CompareView";
 import type { SchemaData } from "@/types/db";
 
 // Monaco must not be SSR'd
@@ -37,12 +38,21 @@ interface SqlEditorProps {
   onSqlChange: (sql: string) => void;
   result: QueryResult | null;
   onResultChange: (result: QueryResult | null) => void;
+  previousResult: QueryResult | null;
+  previousSql: string | null;
+  onRunComplete: (
+    result: QueryResult,
+    previousResult: QueryResult | null,
+    previousSql: string | null
+  ) => void;
   running: boolean;
   onRunningChange: (running: boolean) => void;
   statsEnabled: boolean;
   onStatsEnabledChange: (v: boolean) => void;
   planEnabled: boolean;
   onPlanEnabledChange: (v: boolean) => void;
+  compareEnabled: boolean;
+  onCompareEnabledChange: (v: boolean) => void;
   activeResultTab: string;
   onActiveResultTabChange: (tab: string) => void;
 }
@@ -53,12 +63,17 @@ export default function SqlEditor({
   onSqlChange,
   result,
   onResultChange,
+  previousResult,
+  previousSql,
+  onRunComplete,
   running,
   onRunningChange,
   statsEnabled,
   onStatsEnabledChange,
   planEnabled,
   onPlanEnabledChange,
+  compareEnabled,
+  onCompareEnabledChange,
   activeResultTab,
   onActiveResultTabChange,
 }: SqlEditorProps) {
@@ -281,11 +296,17 @@ export default function SqlEditor({
       const data = await res.json();
 
       if (res.ok) {
-        onResultChange(data);
+        // Promote the prior successful result as baseline when compare mode is on.
+        const nextPrev =
+          compareEnabled && result && !result.error ? result : null;
+        const nextPrevSql = nextPrev ? sql : null;
+        onRunComplete(data, nextPrev, nextPrevSql);
         if (data.truncated) {
           toast.info(`Results truncated to 1,000 rows (total: ${data.rowCount})`);
         }
-        if (data.planXml) {
+        if (compareEnabled && nextPrev) {
+          onActiveResultTabChange("compare");
+        } else if (data.planXml) {
           onActiveResultTabChange("visualPlan");
         } else if (data.statistics?.length) {
           onActiveResultTabChange("statistics");
@@ -383,6 +404,26 @@ export default function SqlEditor({
           <GitBranch className="h-3.5 w-3.5" />
           Query Plan {planEnabled ? "ON" : "OFF"}
         </Button>
+        <Button
+          size="sm"
+          variant={compareEnabled ? "default" : "outline"}
+          onClick={() => {
+            const next = !compareEnabled;
+            onCompareEnabledChange(next);
+            if (next && !statsEnabled && !planEnabled) {
+              toast.info("Tip: enable Statistics and Query Plan for richer comparisons.");
+            }
+          }}
+          className="gap-1.5 text-xs"
+          title={
+            compareEnabled
+              ? "Compare ON — diffs last two runs. Click to disable."
+              : "Compare last two runs — tracks deltas in statistics and plan."
+          }
+        >
+          <GitCompare className="h-3.5 w-3.5" />
+          Compare {compareEnabled ? "ON" : "OFF"}
+        </Button>
         <div className="flex-1" />
         {result && !result.error && (
           <span className="flex items-center gap-1 text-xs text-muted-foreground">
@@ -460,6 +501,16 @@ export default function SqlEditor({
           <TabsTrigger value="planText" className="text-xs px-3 h-6">
             Plan Text
           </TabsTrigger>
+          {compareEnabled && (
+            <TabsTrigger value="compare" className="text-xs px-3 h-6 gap-1.5">
+              Compare
+              {previousResult ? (
+                <Badge variant="secondary" className="text-[10px] px-1 py-0 h-4 min-w-4">
+                  <GitCompare className="h-2.5 w-2.5" />
+                </Badge>
+              ) : null}
+            </TabsTrigger>
+          )}
         </TabsList>
         <TabsContent value="results" className="flex-1 overflow-auto min-h-0 mt-0 data-[state=inactive]:hidden">
           <ResultsTable result={result} loading={running} />
@@ -476,6 +527,11 @@ export default function SqlEditor({
         <TabsContent value="planText" className="flex-1 overflow-hidden min-h-0 mt-0 data-[state=inactive]:hidden">
           <QueryPlanText planXml={result?.planXml} />
         </TabsContent>
+        {compareEnabled && (
+          <TabsContent value="compare" className="flex-1 overflow-auto min-h-0 mt-0 data-[state=inactive]:hidden">
+            <CompareView current={result} previous={previousResult} previousSql={previousSql} />
+          </TabsContent>
+        )}
       </Tabs>
     </div>
   );

@@ -3,86 +3,7 @@
 import { useMemo } from "react";
 import { ChevronDown, BarChart2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-
-interface IoStat {
-  table: string;
-  scanCount: number;
-  logicalReads: number;
-  physicalReads: number;
-  readAheadReads: number;
-  lobLogicalReads: number;
-  lobPhysicalReads: number;
-  lobReadAheadReads: number;
-}
-
-interface TimeStat {
-  label: string;
-  cpuMs: number;
-  elapsedMs: number;
-}
-
-interface ParsedStatistics {
-  io: IoStat[];
-  time: TimeStat[];
-  raw: string[];
-}
-
-function parseStatistics(messages: string[]): ParsedStatistics {
-  const io: IoStat[] = [];
-  const time: TimeStat[] = [];
-  const raw: string[] = [];
-
-  // Regex for STATISTICS IO lines
-  // "Table 'Name'. Scan count N, logical reads N, physical reads N, ..."
-  const ioPattern =
-    /Table '([^']+)'\.\s*Scan count (\d+),\s*logical reads (\d+),\s*physical reads (\d+),(?:[^,]*,)?\s*read-ahead reads (\d+),(?:[^,]*,)?\s*lob logical reads (\d+),\s*lob physical reads (\d+),(?:[^,]*,)?\s*lob read-ahead reads (\d+)/i;
-
-  // Regex for STATISTICS TIME CPU/elapsed pairs
-  // "CPU time = N ms,  elapsed time = N ms"
-  const cpuPattern = /CPU time = (\d+) ms,\s*elapsed time = (\d+) ms/i;
-  const parseCompilePattern = /SQL Server parse and compile time/i;
-  const executionTimesPattern = /SQL Server Execution Times/i;
-
-  for (const msg of messages) {
-    const normalized = msg.replace(/\r\n/g, "\n").trim();
-
-    const ioMatch = normalized.match(ioPattern);
-    if (ioMatch) {
-      io.push({
-        table: ioMatch[1],
-        scanCount: parseInt(ioMatch[2], 10),
-        logicalReads: parseInt(ioMatch[3], 10),
-        physicalReads: parseInt(ioMatch[4], 10),
-        readAheadReads: parseInt(ioMatch[5], 10),
-        lobLogicalReads: parseInt(ioMatch[6], 10),
-        lobPhysicalReads: parseInt(ioMatch[7], 10),
-        lobReadAheadReads: parseInt(ioMatch[8], 10),
-      });
-      continue;
-    }
-
-    const cpuMatch = normalized.match(cpuPattern);
-    if (cpuMatch) {
-      const cpuMs = parseInt(cpuMatch[1], 10);
-      const elapsedMs = parseInt(cpuMatch[2], 10);
-      if (parseCompilePattern.test(normalized)) {
-        time.push({ label: "Parse & Compile", cpuMs, elapsedMs });
-      } else if (executionTimesPattern.test(normalized)) {
-        time.push({ label: "Execution", cpuMs, elapsedMs });
-      } else {
-        time.push({ label: "SQL Server", cpuMs, elapsedMs });
-      }
-      continue;
-    }
-
-    // Collect unparsed messages that aren't just whitespace or SQL Server boilerplate
-    if (normalized && !normalized.match(/^SQL Server (parse and compile time|Execution Times)/i)) {
-      raw.push(normalized);
-    }
-  }
-
-  return { io, time, raw };
-}
+import { parseStatistics, LOGICAL_READS_WARN, ELAPSED_MS_WARN } from "./statisticsUtils";
 
 interface StatisticsPanelProps {
   messages: string[];
@@ -147,7 +68,7 @@ export default function StatisticsPanel({ messages, onEnable }: StatisticsPanelP
                     <td className="px-3 py-2 font-mono text-xs font-medium border-r">{row.table}</td>
                     <td className="px-3 py-2 font-mono text-xs text-right border-r">{row.scanCount.toLocaleString()}</td>
                     <td className="px-3 py-2 font-mono text-xs text-right border-r">
-                      <span className={row.logicalReads > 1000 ? "text-amber-600 dark:text-amber-400 font-semibold" : ""}>
+                      <span className={row.logicalReads > LOGICAL_READS_WARN ? "text-amber-600 dark:text-amber-400 font-semibold" : ""}>
                         {row.logicalReads.toLocaleString()}
                       </span>
                     </td>
@@ -191,7 +112,7 @@ export default function StatisticsPanel({ messages, onEnable }: StatisticsPanelP
                   </div>
                   <div className="flex items-center justify-between">
                     <span className="text-xs text-muted-foreground">Elapsed time</span>
-                    <span className={`font-mono text-sm font-semibold tabular-nums ${t.elapsedMs > 1000 ? "text-amber-600 dark:text-amber-400" : ""}`}>
+                    <span className={`font-mono text-sm font-semibold tabular-nums ${t.elapsedMs > ELAPSED_MS_WARN ? "text-amber-600 dark:text-amber-400" : ""}`}>
                       {t.elapsedMs.toLocaleString()} ms
                     </span>
                   </div>
