@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useState, useCallback, useEffect } from "react";
+import { useTheme } from "next-themes";
 import dynamic from "next/dynamic";
 import type { editor, languages, IRange } from "monaco-editor";
 import { toast } from "sonner";
@@ -61,6 +62,7 @@ export default function SqlEditor({
   activeResultTab,
   onActiveResultTabChange,
 }: SqlEditorProps) {
+  const { resolvedTheme } = useTheme();
   const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null);
   const monacoRef = useRef<typeof import("monaco-editor") | null>(null);
   const schemaRef = useRef<SchemaData | null>(null);
@@ -409,7 +411,7 @@ export default function SqlEditor({
           defaultValue={sql}
           onChange={(v) => onSqlChange(v ?? "")}
           onMount={handleEditorDidMount}
-          theme="vs"
+          theme={resolvedTheme === "dark" ? "vs-dark" : "vs"}
           options={{
             minimap: { enabled: false },
             fontSize: 14,
