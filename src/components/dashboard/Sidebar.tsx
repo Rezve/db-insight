@@ -1,11 +1,12 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
-import { Code2, Table2, LayoutDashboard } from "lucide-react";
+import { Code2, Table2, LayoutDashboard, ChevronDown } from "lucide-react";
 import type { TableInfo } from "@/types/db";
 
 interface SidebarProps {
@@ -14,6 +15,7 @@ interface SidebarProps {
 
 export default function Sidebar({ tables }: SidebarProps) {
   const pathname = usePathname();
+  const [isTablesOpen, setIsTablesOpen] = useState(false);
 
   const navLinks = [
     { href: "/dashboard", label: "Overview", icon: LayoutDashboard },
@@ -46,39 +48,45 @@ export default function Sidebar({ tables }: SidebarProps) {
       </div>
 
       <div className="flex-1 overflow-hidden flex flex-col p-3">
-        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider px-2 py-1">
+        <button
+          onClick={() => setIsTablesOpen((prev) => !prev)}
+          className="flex items-center gap-1 text-xs font-semibold text-muted-foreground uppercase tracking-wider px-2 py-1 w-full hover:text-foreground transition-colors"
+        >
+          <ChevronDown className={cn("h-3.5 w-3.5 transition-transform", isTablesOpen && "rotate-180")} />
           Tables ({tables.length})
-        </p>
-        <ScrollArea className="flex-1 min-h-0">
-          <nav className="space-y-0.5 pr-2">
-            {tables.map((table) => {
-              const href = `/dashboard/tables/${encodeURIComponent(table.fullName)}`;
-              const isActive = pathname === href;
-              return (
-                <Link
-                  key={table.fullName}
-                  href={href}
-                  className={cn(
-                    "flex items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors min-w-0",
-                    isActive
-                      ? "bg-primary/10 text-primary font-medium"
-                      : "text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
-                  )}
-                >
-                  <Table2 className="h-3.5 w-3.5 flex-shrink-0" />
-                  <span className="truncate min-w-0 flex-1" title={table.fullName}>
-                    {table.name}
-                  </span>
-                  {table.type === "VIEW" && (
-                    <Badge variant="outline" className="text-[10px] py-0 px-1 flex-shrink-0">
-                      V
-                    </Badge>
-                  )}
-                </Link>
-              );
-            })}
-          </nav>
-        </ScrollArea>
+        </button>
+        {isTablesOpen && (
+          <ScrollArea className="flex-1 min-h-0">
+            <nav className="space-y-0.5 pr-2">
+              {tables.map((table) => {
+                const href = `/dashboard/tables/${encodeURIComponent(table.fullName)}`;
+                const isActive = pathname === href;
+                return (
+                  <Link
+                    key={table.fullName}
+                    href={href}
+                    className={cn(
+                      "flex items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors min-w-0",
+                      isActive
+                        ? "bg-primary/10 text-primary font-medium"
+                        : "text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
+                    )}
+                  >
+                    <Table2 className="h-3.5 w-3.5 flex-shrink-0" />
+                    <span className="truncate min-w-0 flex-1" title={table.fullName}>
+                      {table.name}
+                    </span>
+                    {table.type === "VIEW" && (
+                      <Badge variant="outline" className="text-[10px] py-0 px-1 flex-shrink-0">
+                        V
+                      </Badge>
+                    )}
+                  </Link>
+                );
+              })}
+            </nav>
+          </ScrollArea>
+        )}
       </div>
     </aside>
   );
