@@ -1,6 +1,8 @@
 "use client";
 
 import { use, useState, useCallback } from "react";
+import Link from "next/link";
+import { ArrowLeft } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Dialog,
@@ -63,6 +65,13 @@ export default function TableAnalysisPage({ params }: PageProps) {
     <div className="p-6 space-y-4">
       {/* Header */}
       <div>
+        <Link
+          href="/dashboard"
+          className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground mb-2"
+        >
+          <ArrowLeft className="h-4 w-4" />
+          Overview
+        </Link>
         <h1 className="text-2xl font-bold tracking-tight font-mono">{name}</h1>
         <p className="text-sm text-muted-foreground">
           Schema: <span className="font-mono">{schema}</span>

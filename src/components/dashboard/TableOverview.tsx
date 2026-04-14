@@ -4,6 +4,7 @@ import { useState } from "react";
 import { LayoutGrid, List, Search, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import TableCard from "@/components/dashboard/TableCard";
 import type { TableInfo } from "@/types/db";
 
@@ -15,6 +16,7 @@ interface TableOverviewProps {
 export default function TableOverview({ baseTables, views }: TableOverviewProps) {
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
   const [searchQuery, setSearchQuery] = useState("");
+  const [sortBy, setSortBy] = useState<"alpha" | "size-asc" | "size-desc">("alpha");
 
   const q = searchQuery.toLowerCase();
   const filteredTables = baseTables.filter(
@@ -23,6 +25,16 @@ export default function TableOverview({ baseTables, views }: TableOverviewProps)
   const filteredViews = views.filter(
     (t) => t.name.toLowerCase().includes(q) || t.schema.toLowerCase().includes(q)
   );
+
+  function sortItems(tables: TableInfo[]) {
+    return [...tables].sort((a, b) => {
+      if (sortBy === "alpha") return a.name.localeCompare(b.name);
+      if (sortBy === "size-asc") return (a.sizeGB ?? 0) - (b.sizeGB ?? 0);
+      return (b.sizeGB ?? 0) - (a.sizeGB ?? 0);
+    });
+  }
+  const sortedTables = sortItems(filteredTables);
+  const sortedViews = sortItems(filteredViews);
 
   const isSearching = searchQuery.length > 0;
 
@@ -55,6 +67,16 @@ export default function TableOverview({ baseTables, views }: TableOverviewProps)
               </button>
             )}
           </div>
+          <Select value={sortBy} onValueChange={(v) => setSortBy(v as typeof sortBy)}>
+            <SelectTrigger className="h-8 w-36 text-sm">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="alpha">Name (A → Z)</SelectItem>
+              <SelectItem value="size-asc">Size (small → large)</SelectItem>
+              <SelectItem value="size-desc">Size (large → small)</SelectItem>
+            </SelectContent>
+          </Select>
           <div className="flex items-center gap-1 border rounded-md p-0.5">
             <Button
               variant="ghost"
@@ -78,20 +100,20 @@ export default function TableOverview({ baseTables, views }: TableOverviewProps)
         </div>
       </div>
 
-      {filteredTables.length > 0 && (
+      {sortedTables.length > 0 && (
         <section className="mb-8">
           <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-3">
             Tables
           </h2>
           {viewMode === "grid" ? (
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
-              {filteredTables.map((table) => (
+              {sortedTables.map((table) => (
                 <TableCard key={table.fullName} table={table} variant="grid" />
               ))}
             </div>
           ) : (
             <div className="flex flex-col gap-1">
-              {filteredTables.map((table) => (
+              {sortedTables.map((table) => (
                 <TableCard key={table.fullName} table={table} variant="list" />
               ))}
             </div>
@@ -99,20 +121,20 @@ export default function TableOverview({ baseTables, views }: TableOverviewProps)
         </section>
       )}
 
-      {filteredViews.length > 0 && (
+      {sortedViews.length > 0 && (
         <section>
           <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-3">
             Views
           </h2>
           {viewMode === "grid" ? (
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
-              {filteredViews.map((table) => (
+              {sortedViews.map((table) => (
                 <TableCard key={table.fullName} table={table} variant="grid" />
               ))}
             </div>
           ) : (
             <div className="flex flex-col gap-1">
-              {filteredViews.map((table) => (
+              {sortedViews.map((table) => (
                 <TableCard key={table.fullName} table={table} variant="list" />
               ))}
             </div>
@@ -120,7 +142,7 @@ export default function TableOverview({ baseTables, views }: TableOverviewProps)
         </section>
       )}
 
-      {isSearching && filteredTables.length === 0 && filteredViews.length === 0 && (
+      {isSearching && sortedTables.length === 0 && sortedViews.length === 0 && (
         <p className="text-muted-foreground text-sm">No tables match &ldquo;{searchQuery}&rdquo;.</p>
       )}
 
