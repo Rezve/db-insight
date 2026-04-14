@@ -47,8 +47,8 @@ export default function TableCard({ table, variant = "grid" }: TableCardProps) {
 
   return (
     <Link href={href} className="block group">
-      <Card className="transition-all hover:shadow-md hover:border-primary/30 h-full">
-        <CardHeader className="pb-2">
+      <Card className="transition-all hover:shadow-md hover:border-primary/30 h-full py-2.5 gap-2">
+        <CardHeader className="px-3 pb-1.5">
           <CardTitle className="text-sm font-medium flex items-center gap-2 justify-between overflow-hidden">
             <span className="flex items-center gap-2 min-w-0">
               <Table2 className="h-4 w-4 text-muted-foreground flex-shrink-0" />
@@ -57,7 +57,7 @@ export default function TableCard({ table, variant = "grid" }: TableCardProps) {
             <ArrowRight className="h-4 w-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0" />
           </CardTitle>
         </CardHeader>
-        <CardContent>
+        <CardContent className="px-3 pt-0">
           <div className="flex items-center gap-2 flex-wrap">
             <Badge variant="outline" className="text-xs font-mono text-muted-foreground">
               {table.schema}
@@ -67,12 +67,12 @@ export default function TableCard({ table, variant = "grid" }: TableCardProps) {
                 VIEW
               </Badge>
             )}
+            {table.sizeGB != null && (
+              <span className="text-xs text-muted-foreground tabular-nums ml-auto">
+                {formatSize(table.sizeGB)}
+              </span>
+            )}
           </div>
-          {table.sizeGB != null && (
-            <p className="text-xs text-muted-foreground mt-2 tabular-nums">
-              {formatSize(table.sizeGB)}
-            </p>
-          )}
         </CardContent>
       </Card>
     </Link>
