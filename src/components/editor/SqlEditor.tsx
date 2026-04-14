@@ -91,7 +91,7 @@ export default function SqlEditor({
   const registerCompletionProvider = useCallback(
     (monacoInstance: typeof import("monaco-editor")) => {
       monacoInstance.languages.registerCompletionItemProvider("sql", {
-        triggerCharacters: [" ", ".", "\n", "("],
+        triggerCharacters: [" ", ".", "("],
         provideCompletionItems: (model, position) => {
           const schema = schemaRef.current;
           if (!schema) return { suggestions: [] };
