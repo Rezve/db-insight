@@ -10,6 +10,8 @@ import {
   ChevronDown,
   GitCompare,
   Info,
+  Pin,
+  X,
 } from "lucide-react";
 import {
   parseStatistics,
@@ -38,6 +40,9 @@ interface CompareViewProps {
   current: QueryResult | null;
   previous: QueryResult | null;
   previousSql: string | null;
+  baselinePinned: boolean;
+  baselinePinnedAt: number | null;
+  onUnpin: () => void;
 }
 
 type Verdict = "improved" | "regressed" | "unchanged" | "mixed";
@@ -67,6 +72,16 @@ function deltaClass(pct: number, lowerIsBetter = true): string {
 function signed(pct: number): string {
   const s = pct >= 0 ? "+" : "";
   return `${s}${pct.toFixed(0)}%`;
+}
+
+function formatRelativeTime(ts: number): string {
+  const diffSec = Math.max(0, Math.round((Date.now() - ts) / 1000));
+  if (diffSec < 60) return "just now";
+  const diffMin = Math.round(diffSec / 60);
+  if (diffMin < 60) return `${diffMin} min ago`;
+  const diffHr = Math.round(diffMin / 60);
+  if (diffHr < 24) return `${diffHr} hr ago`;
+  return `${Math.round(diffHr / 24)} d ago`;
 }
 
 function HelpPopover() {
@@ -112,6 +127,12 @@ function HelpPopover() {
               When Compare mode is on, each successful run is remembered as the
               baseline for the next run. The Compare tab diffs the two runs
               across statistics, CPU, and the execution plan.
+            </p>
+            <p className="opacity-80 leading-relaxed mt-2">
+              Click <span className="font-semibold">Pin baseline</span> in the
+              toolbar to freeze the current run as a sticky baseline. Subsequent
+              runs will diff against it — useful when iterating an edit against
+              the original query — until you unpin.
             </p>
           </div>
 
@@ -177,7 +198,14 @@ function HelpPopover() {
   );
 }
 
-export default function CompareView({ current, previous, previousSql }: CompareViewProps) {
+export default function CompareView({
+  current,
+  previous,
+  previousSql,
+  baselinePinned,
+  baselinePinnedAt,
+  onUnpin,
+}: CompareViewProps) {
   const prevStats = useMemo(
     () => (previous?.statistics ? parseStatistics(previous.statistics) : null),
     [previous]
@@ -279,12 +307,15 @@ export default function CompareView({ current, previous, previousSql }: CompareV
           currPhysical={currPhysical}
           prevScanCount={prevScanCount}
           currScanCount={currScanCount}
+          baselinePinned={baselinePinned}
+          baselinePinnedAt={baselinePinnedAt}
+          onUnpin={onUnpin}
         />
         {previousSql && (
           <details className="mt-3 group">
             <summary className="flex items-center gap-1.5 cursor-pointer text-xs text-muted-foreground hover:text-foreground list-none">
               <ChevronDown className="h-3.5 w-3.5 transition-transform group-open:rotate-180" />
-              Previous query
+              {baselinePinned ? "Baseline query" : "Previous query"}
             </summary>
             <pre className="mt-2 rounded-lg border bg-muted/40 p-3 text-xs font-mono whitespace-pre-wrap break-all">
               {previousSql}
@@ -431,6 +462,9 @@ function HeaderCard({
   currPhysical,
   prevScanCount,
   currScanCount,
+  baselinePinned,
+  baselinePinnedAt,
+  onUnpin,
 }: {
   verdictResult: VerdictResult;
   durPct: number;
@@ -447,6 +481,9 @@ function HeaderCard({
   currPhysical: number;
   prevScanCount: number;
   currScanCount: number;
+  baselinePinned: boolean;
+  baselinePinnedAt: number | null;
+  onUnpin: () => void;
 }) {
   const { verdict, reason } = verdictResult;
   const logicalDelta = currLogical - prevLogical;
@@ -478,10 +515,28 @@ function HeaderCard({
 
   return (
     <div className={`rounded-lg border p-4 ${verdictMeta.color}`}>
-      <div className="flex items-center gap-2 mb-1">
+      <div className="flex items-center gap-2 mb-1 flex-wrap">
         {verdictMeta.icon}
         <span className="font-semibold text-sm">{verdictMeta.label}</span>
         <HelpPopover />
+        {baselinePinned && (
+          <span className="ml-1 inline-flex items-center gap-1 rounded-full border border-current/30 bg-white/40 dark:bg-black/20 px-2 py-0.5 text-[11px] font-medium">
+            <Pin className="h-3 w-3" />
+            Pinned baseline
+            {baselinePinnedAt && (
+              <span className="opacity-70">· {formatRelativeTime(baselinePinnedAt)}</span>
+            )}
+            <button
+              type="button"
+              onClick={onUnpin}
+              className="ml-0.5 rounded p-0.5 hover:bg-black/10 dark:hover:bg-white/15 transition-colors"
+              title="Unpin baseline"
+              aria-label="Unpin baseline"
+            >
+              <X className="h-3 w-3" />
+            </button>
+          </span>
+        )}
       </div>
       <p className="text-xs opacity-80 mb-3">{reason}</p>
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-sm">

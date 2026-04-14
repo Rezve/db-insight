@@ -8,7 +8,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { Play, Loader2, Trash2, Clock, BarChart2, GitBranch, GitCompare, WandSparkles } from "lucide-react";
+import { Play, Loader2, Trash2, Clock, BarChart2, GitBranch, GitCompare, Pin, PinOff, WandSparkles } from "lucide-react";
 import { format as formatSql } from "sql-formatter";
 import ResultsTable from "./ResultsTable";
 import StatisticsPanel from "./StatisticsPanel";
@@ -37,14 +37,19 @@ interface SqlEditorProps {
   sql: string;
   onSqlChange: (sql: string) => void;
   result: QueryResult | null;
+  resultSql: string | null;
   onResultChange: (result: QueryResult | null) => void;
   previousResult: QueryResult | null;
   previousSql: string | null;
   onRunComplete: (
     result: QueryResult,
+    resultSql: string,
     previousResult: QueryResult | null,
     previousSql: string | null
   ) => void;
+  baselinePinned: boolean;
+  baselinePinnedAt: number | null;
+  onPinBaselineChange: (pinned: boolean) => void;
   running: boolean;
   onRunningChange: (running: boolean) => void;
   statsEnabled: boolean;
@@ -62,10 +67,14 @@ export default function SqlEditor({
   sql,
   onSqlChange,
   result,
+  resultSql,
   onResultChange,
   previousResult,
   previousSql,
   onRunComplete,
+  baselinePinned,
+  baselinePinnedAt,
+  onPinBaselineChange,
   running,
   onRunningChange,
   statsEnabled,
@@ -296,11 +305,22 @@ export default function SqlEditor({
       const data = await res.json();
 
       if (res.ok) {
-        // Promote the prior successful result as baseline when compare mode is on.
-        const nextPrev =
-          compareEnabled && result && !result.error ? result : null;
-        const nextPrevSql = nextPrev ? sql : null;
-        onRunComplete(data, nextPrev, nextPrevSql);
+        // Baseline selection for the compare diff:
+        // - Pin active → keep the pinned baseline untouched.
+        // - Compare on, no pin → auto-roll (promote prior successful result).
+        // - Compare off → no baseline.
+        let nextPrev: QueryResult | null = null;
+        let nextPrevSql: string | null = null;
+        if (compareEnabled) {
+          if (baselinePinned && previousResult) {
+            nextPrev = previousResult;
+            nextPrevSql = previousSql;
+          } else if (result && !result.error) {
+            nextPrev = result;
+            nextPrevSql = resultSql;
+          }
+        }
+        onRunComplete(data, rawSql, nextPrev, nextPrevSql);
         if (data.truncated) {
           toast.info(`Results truncated to 1,000 rows (total: ${data.rowCount})`);
         }
@@ -424,6 +444,38 @@ export default function SqlEditor({
           <GitCompare className="h-3.5 w-3.5" />
           Compare {compareEnabled ? "ON" : "OFF"}
         </Button>
+        {compareEnabled && (
+          <Button
+            size="sm"
+            variant={baselinePinned ? "default" : "outline"}
+            disabled={!baselinePinned && (!result || !!result.error)}
+            onClick={() => {
+              if (baselinePinned) {
+                onPinBaselineChange(false);
+                toast.info("Baseline unpinned.");
+              } else {
+                if (!result || result.error) return;
+                onPinBaselineChange(true);
+                toast.success("Baseline pinned — future runs will compare against this query.");
+              }
+            }}
+            className="gap-1.5 text-xs"
+            title={
+              baselinePinned
+                ? "Baseline pinned — click to unpin and resume auto-rolling compare."
+                : !result || result.error
+                ? "Run a query first to pin it as baseline."
+                : "Pin this run as the sticky baseline for future compare diffs."
+            }
+          >
+            {baselinePinned ? (
+              <PinOff className="h-3.5 w-3.5" />
+            ) : (
+              <Pin className="h-3.5 w-3.5" />
+            )}
+            {baselinePinned ? "Pinned" : "Pin baseline"}
+          </Button>
+        )}
         <div className="flex-1" />
         {result && !result.error && (
           <span className="flex items-center gap-1 text-xs text-muted-foreground">
@@ -529,7 +581,17 @@ export default function SqlEditor({
         </TabsContent>
         {compareEnabled && (
           <TabsContent value="compare" className="flex-1 overflow-auto min-h-0 mt-0 data-[state=inactive]:hidden">
-            <CompareView current={result} previous={previousResult} previousSql={previousSql} />
+            <CompareView
+              current={result}
+              previous={previousResult}
+              previousSql={previousSql}
+              baselinePinned={baselinePinned}
+              baselinePinnedAt={baselinePinnedAt}
+              onUnpin={() => {
+                onPinBaselineChange(false);
+                toast.info("Baseline unpinned.");
+              }}
+            />
           </TabsContent>
         )}
       </Tabs>

@@ -24,8 +24,11 @@ interface TabState {
   name: string;
   sql: string;
   result: QueryResult | null;
+  resultSql: string | null;
   previousResult: QueryResult | null;
   previousSql: string | null;
+  baselinePinned: boolean;
+  baselinePinnedAt: number | null;
   running: boolean;
   activeResultTab: ResultTabName;
   statsEnabled: boolean;
@@ -41,8 +44,11 @@ function createTab(name?: string, sql?: string): TabState {
     name: name ?? `Query ${tabCounter++}`,
     sql: sql ?? "SELECT TOP 100 * FROM ",
     result: null,
+    resultSql: null,
     previousResult: null,
     previousSql: null,
+    baselinePinned: false,
+    baselinePinnedAt: null,
     running: false,
     activeResultTab: "results",
     statsEnabled: false,
@@ -218,12 +224,31 @@ export default function EditorTabsManager() {
           sql={activeTab.sql}
           onSqlChange={(sql) => updateTab(activeTab.id, { sql })}
           result={activeTab.result}
+          resultSql={activeTab.resultSql}
           onResultChange={(result) => updateTab(activeTab.id, { result })}
           previousResult={activeTab.previousResult}
           previousSql={activeTab.previousSql}
-          onRunComplete={(result, previousResult, previousSql) =>
-            updateTab(activeTab.id, { result, previousResult, previousSql })
+          onRunComplete={(result, resultSql, previousResult, previousSql) =>
+            updateTab(activeTab.id, { result, resultSql, previousResult, previousSql })
           }
+          baselinePinned={activeTab.baselinePinned}
+          baselinePinnedAt={activeTab.baselinePinnedAt}
+          onPinBaselineChange={(pinned) => {
+            if (pinned) {
+              if (!activeTab.result || activeTab.result.error) return;
+              updateTab(activeTab.id, {
+                previousResult: activeTab.result,
+                previousSql: activeTab.resultSql,
+                baselinePinned: true,
+                baselinePinnedAt: Date.now(),
+              });
+            } else {
+              updateTab(activeTab.id, {
+                baselinePinned: false,
+                baselinePinnedAt: null,
+              });
+            }
+          }}
           running={activeTab.running}
           onRunningChange={(running) => updateTab(activeTab.id, { running })}
           statsEnabled={activeTab.statsEnabled}
@@ -234,8 +259,15 @@ export default function EditorTabsManager() {
           onCompareEnabledChange={(compareEnabled) =>
             updateTab(activeTab.id, {
               compareEnabled,
-              // Clear stale baseline when disabling compare.
-              ...(compareEnabled ? {} : { previousResult: null, previousSql: null }),
+              // Clear stale baseline + pin state when disabling compare.
+              ...(compareEnabled
+                ? {}
+                : {
+                    previousResult: null,
+                    previousSql: null,
+                    baselinePinned: false,
+                    baselinePinnedAt: null,
+                  }),
             })
           }
           activeResultTab={activeTab.activeResultTab}
