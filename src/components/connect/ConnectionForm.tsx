@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -8,9 +8,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, Database, ChevronRight, ArrowLeft, Check, Server, KeyRound, Monitor } from "lucide-react";
+import { Loader2, Database, ChevronRight, ArrowLeft, Check, Server, KeyRound, Monitor, FileKey, Info } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { AuthMode, DbEngine } from "@/lib/mssql-config";
+import type { EnvDbConfig } from "@/app/api/env-config/route";
 
 type Step = "credentials" | "database";
 
@@ -36,6 +37,8 @@ export default function ConnectionForm() {
   const [databases, setDatabases] = useState<string[]>([]);
   const [selectedDb, setSelectedDb] = useState("");
   const [filter, setFilter] = useState("");
+  const [envPrefilled, setEnvPrefilled] = useState(false);
+  const [envDatabase, setEnvDatabase] = useState<string | null>(null);
 
   const [creds, setCreds] = useState<Credentials>({
     engine: "sqlserver",
@@ -47,6 +50,27 @@ export default function ConnectionForm() {
     encrypt: false,
     trustServerCertificate: true,
   });
+
+  useEffect(() => {
+    fetch("/api/env-config")
+      .then((r) => r.json())
+      .then(({ config }: { config: EnvDbConfig | null }) => {
+        if (!config) return;
+        setCreds((prev) => ({
+          ...prev,
+          server: config.server,
+          port: config.port != null ? String(config.port) : "",
+          authMode: config.authMode,
+          username: config.username ?? "",
+          password: config.password ?? "",
+          encrypt: config.encrypt,
+          trustServerCertificate: config.trustServerCertificate,
+        }));
+        setEnvPrefilled(true);
+        if (config.database) setEnvDatabase(config.database);
+      })
+      .catch(() => {/* silently ignore — env config is optional */});
+  }, []);
 
   function setField<K extends keyof Credentials>(field: K, value: Credentials[K]) {
     setCreds((prev) => ({ ...prev, [field]: value }));
@@ -85,12 +109,14 @@ export default function ConnectionForm() {
       if (data.error) {
         toast.error(data.error);
       } else {
-        setDatabases(data.databases ?? []);
+        const dbs: string[] = data.databases ?? [];
+        setDatabases(dbs);
+        // Prefer DB_DATABASE from .env, else first non-system db
+        const SYSTEM = new Set(["master", "model", "msdb", "tempdb"]);
         setSelectedDb(
-          // Pre-select first non-system db if available
-          data.databases?.find(
-            (d: string) => !["master", "model", "msdb", "tempdb"].includes(d)
-          ) ?? data.databases?.[0] ?? ""
+          (envDatabase && dbs.includes(envDatabase))
+            ? envDatabase
+            : dbs.find((d) => !SYSTEM.has(d)) ?? dbs[0] ?? ""
         );
         setFilter("");
         setStep("database");
@@ -140,6 +166,12 @@ export default function ConnectionForm() {
         <CardTitle className="flex items-center gap-2 text-lg">
           <Database className="h-5 w-5" />
           {step === "credentials" ? "New Connection" : "Select Database"}
+          {envPrefilled && (
+            <Badge variant="secondary" className="ml-auto text-[10px] gap-1 text-emerald-700 bg-emerald-50 border-emerald-200 dark:text-emerald-400 dark:bg-emerald-950 dark:border-emerald-800">
+              <FileKey className="h-3 w-3" />
+              Pre-filled from .env
+            </Badge>
+          )}
         </CardTitle>
         {/* Step indicator */}
         <CardDescription>
@@ -312,6 +344,19 @@ export default function ConnectionForm() {
             <p className="text-xs text-center text-muted-foreground">
               Credentials are held in server memory only — never written to disk or the browser.
             </p>
+
+            {!envPrefilled && (
+              <div className="flex items-start gap-2 rounded-md border border-dashed px-3 py-2.5 text-xs text-muted-foreground">
+                <Info className="h-3.5 w-3.5 mt-0.5 flex-shrink-0" />
+                <span>
+                  <span className="font-medium text-foreground">Tip:</span> Add{" "}
+                  <code className="text-[11px]">DB_SERVER</code>,{" "}
+                  <code className="text-[11px]">DB_USERNAME</code>, and{" "}
+                  <code className="text-[11px]">DB_PASSWORD</code> to your{" "}
+                  <code className="text-[11px]">.env</code> file to auto-fill this form on every visit.
+                </span>
+              </div>
+            )}
           </form>
         ) : (
           <div className="space-y-4">
