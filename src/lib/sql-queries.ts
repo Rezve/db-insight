@@ -227,6 +227,80 @@ WHERE c.TABLE_SCHEMA = @schema
 ORDER BY c.ORDINAL_POSITION
 `;
 
+export function buildCreateTableDDL(
+  schema: string,
+  tableName: string,
+  columns: import("@/types/analysis").TableColumnDetail[]
+): string {
+  function fmtType(col: import("@/types/analysis").TableColumnDetail): string {
+    const t = col.dataType.toLowerCase();
+    if (["char", "varchar", "nchar", "nvarchar", "binary", "varbinary"].includes(t)) {
+      if (col.maxLength === -1) return `${col.dataType}(MAX)`;
+      if (col.maxLength != null) return `${col.dataType}(${col.maxLength})`;
+    }
+    if (["decimal", "numeric"].includes(t)) {
+      if (col.numericPrecision != null && col.numericScale != null)
+        return `${col.dataType}(${col.numericPrecision}, ${col.numericScale})`;
+    }
+    if (["float", "real"].includes(t) && col.numericPrecision != null)
+      return `${col.dataType}(${col.numericPrecision})`;
+    return col.dataType;
+  }
+
+  const lines: string[] = columns.map((col) => {
+    const parts: string[] = [`  ${quoteId(col.columnName)}`, fmtType(col)];
+    if (col.isIdentity) parts.push("IDENTITY(1,1)");
+    parts.push(col.isNullable ? "NULL" : "NOT NULL");
+    if (col.columnDefault != null) parts.push(`DEFAULT ${col.columnDefault}`);
+    return parts.join(" ");
+  });
+
+  const pkCols = columns.filter((c) => c.isPrimaryKey);
+  if (pkCols.length > 0) {
+    const pkColList = pkCols.map((c) => quoteId(c.columnName)).join(", ");
+    lines.push(`  CONSTRAINT ${quoteId("PK_" + tableName)} PRIMARY KEY (${pkColList})`);
+  }
+
+  return `CREATE TABLE ${quoteId(schema)}.${quoteId(tableName)} (\n${lines.join(",\n")}\n);`;
+}
+
+export function buildIndexDDL(
+  schema: string,
+  tableName: string,
+  indexes: import("@/types/analysis").IndexInfo[]
+): string {
+  const statements: string[] = [];
+
+  for (const idx of indexes) {
+    // Skip heap (indexId 0) and the PK (already captured in CREATE TABLE)
+    if (idx.indexId === 0 || idx.isPrimaryKey) continue;
+    // Only emit standard clustered/nonclustered DDL
+    const typeUp = idx.type.toUpperCase();
+    if (!typeUp.includes("CLUSTERED") || typeUp.includes("COLUMNSTORE")) continue;
+
+    const keyCols = idx.columns
+      .filter((c) => !c.isIncluded)
+      .sort((a, b) => a.keyOrdinal - b.keyOrdinal)
+      .map((c) => quoteId(c.name));
+    if (keyCols.length === 0) continue;
+
+    const includedCols = idx.columns
+      .filter((c) => c.isIncluded)
+      .map((c) => quoteId(c.name));
+
+    const unique = idx.isUnique ? "UNIQUE " : "";
+    let stmt = `CREATE ${unique}${typeUp} INDEX ${quoteId(idx.indexName)}\n    ON ${quoteId(schema)}.${quoteId(tableName)} (${keyCols.join(", ")})`;
+    if (includedCols.length > 0) stmt += `\n    INCLUDE (${includedCols.join(", ")})`;
+    if (idx.filterDefinition) stmt += `\n    WHERE ${idx.filterDefinition}`;
+    stmt += ";";
+    if (idx.isDisabled) stmt += "  -- DISABLED";
+
+    statements.push(stmt);
+  }
+
+  return statements.join("\n\n");
+}
+
 export function synthesizeMissingIndexDDL(
   equalityColumns: string | null,
   inequalityColumns: string | null,
