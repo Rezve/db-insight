@@ -445,7 +445,7 @@ export default function SqlEditor({
             className="h-7 w-7 p-0"
             title={hasSelection ? "Run selected text (Ctrl+Enter)" : "Run query (Ctrl+Enter)"}
           >
-            <Play className="h-4 w-4" />
+            <Play className="h-4 w-4 text-green-500" />
           </Button>
         )}
         <Button
