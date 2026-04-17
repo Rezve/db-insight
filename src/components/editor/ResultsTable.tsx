@@ -17,6 +17,7 @@ interface ResultsTableProps {
     truncated: boolean;
     error?: string;
     lineNumber?: number;
+    rowsAffected?: number[];
   } | null;
   loading: boolean;
 }
@@ -58,9 +59,14 @@ export default function ResultsTable({ result, loading }: ResultsTableProps) {
   }
 
   if (result.rows.length === 0) {
+    const affected = result.rowsAffected?.reduce((a, b) => a + b, 0) ?? 0;
+    const message =
+      affected > 0
+        ? `${affected} row${affected === 1 ? "" : "s"} affected`
+        : "Query executed successfully — no rows returned";
     return (
       <div className="flex items-center justify-center h-full text-muted-foreground text-sm p-8">
-        Query executed successfully — no rows returned
+        {message}
       </div>
     );
   }

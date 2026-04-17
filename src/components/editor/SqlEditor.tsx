@@ -8,7 +8,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { Play, Loader2, Trash2, Clock, BarChart2, GitBranch, GitCompare, Pin, PinOff, WandSparkles } from "lucide-react";
+import { Play, Trash2, Clock, BarChart2, GitBranch, GitCompare, Pin, PinOff, WandSparkles, X } from "lucide-react";
 import { format as formatSql } from "sql-formatter";
 import ResultsTable from "./ResultsTable";
 import StatisticsPanel from "./StatisticsPanel";
@@ -28,6 +28,7 @@ interface QueryResult {
   truncated: boolean;
   error?: string;
   lineNumber?: number;
+  rowsAffected?: number[];
   statistics?: string[];
   planXml?: string;
 }
@@ -88,6 +89,7 @@ export default function SqlEditor({
 }: SqlEditorProps) {
   const { resolvedTheme } = useTheme();
   const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
   const monacoRef = useRef<typeof import("monaco-editor") | null>(null);
   const schemaRef = useRef<SchemaData | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -293,6 +295,8 @@ export default function SqlEditor({
         ? `${prefixParts.join("\n")}\n${rawSql}\n${suffixParts.join("\n")}`
         : rawSql;
 
+    const controller = new AbortController();
+    abortRef.current = controller;
     onRunningChange(true);
     onResultChange(null);
 
@@ -301,6 +305,7 @@ export default function SqlEditor({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ sql: sqlText, planEnabled }),
+        signal: controller.signal,
       });
       const data = await res.json();
 
@@ -338,11 +343,20 @@ export default function SqlEditor({
         toast.error(data.error ?? "Query failed");
         onActiveResultTabChange(data.statistics?.length ? "statistics" : "results");
       }
-    } catch {
-      toast.error("Network error");
+    } catch (err) {
+      if (err instanceof Error && err.name === "AbortError") {
+        // User cancelled — no toast needed
+      } else {
+        toast.error("Network error");
+      }
     } finally {
+      abortRef.current = null;
       onRunningChange(false);
     }
+  }
+
+  function cancelQuery() {
+    abortRef.current?.abort();
   }
 
   const handleDragStart = useCallback((e: React.MouseEvent) => {
@@ -378,30 +392,38 @@ export default function SqlEditor({
     <div ref={containerRef} className="flex flex-col h-full">
       {/* Toolbar */}
       <div className="flex items-center gap-2 px-4 py-2 border-b bg-zinc-50 dark:bg-zinc-900">
-        <Button
-          size="sm"
-          onClick={() => runQuery()}
-          disabled={running}
-          className="gap-1.5 min-w-32 justify-center"
-          title={hasSelection ? "Run selected text (Ctrl+Enter)" : "Run query (Ctrl+Enter)"}
-        >
-          {running ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
-          ) : (
+        {running ? (
+          <Button
+            size="sm"
+            variant="destructive"
+            onClick={cancelQuery}
+            className="gap-1.5 min-w-32 justify-center"
+            title="Cancel query"
+          >
+            <X className="h-4 w-4" />
+            Cancel
+          </Button>
+        ) : (
+          <Button
+            size="sm"
+            onClick={() => runQuery()}
+            className="gap-1.5 min-w-32 justify-center"
+            title={hasSelection ? "Run selected text (Ctrl+Enter)" : "Run query (Ctrl+Enter)"}
+          >
             <Play className="h-4 w-4" />
-          )}
-          {hasSelection ? "Run Selected" : "Run"}
-        </Button>
+            {hasSelection ? "Run Selected" : "Run"}
+          </Button>
+        )}
         <span className="text-xs text-muted-foreground">or Ctrl+Enter</span>
         <Button
           size="sm"
           variant="outline"
           onClick={formatQuery}
           className="gap-1.5 text-xs"
-          title={hasSelection ? "Format selected SQL (Alt+Shift+F)" : "Format all SQL (Alt+Shift+F)"}
+          title="Format SQL (Alt+Shift+F)"
         >
           <WandSparkles className="h-3.5 w-3.5" />
-          {hasSelection ? "Format Selected" : "Format"}
+          Format
         </Button>
         <div className="mx-2 h-4 w-px bg-border" />
         <Button
