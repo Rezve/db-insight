@@ -120,7 +120,7 @@ export default function SqlEditor({
         triggerCharacters: [" ", ".", "("],
         provideCompletionItems: (model, position) => {
           const schema = schemaRef.current;
-          if (!schema) return { suggestions: [] };
+          if (!schema?.tables) return { suggestions: [] };
 
           const word = model.getWordUntilPosition(position);
           const range: IRange = {

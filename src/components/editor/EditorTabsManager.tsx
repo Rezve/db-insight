@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useRef, useState, useEffect } from "react";
 import { Plus, Upload, Download, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import SqlEditor from "./SqlEditor";
@@ -36,12 +36,24 @@ interface TabState {
   compareEnabled: boolean;
 }
 
-let tabCounter = 1;
+interface PersistedTab { id: string; name: string; sql: string; }
+interface PersistedEditorState { tabs: PersistedTab[]; activeTabId: string; }
 
-function createTab(name?: string, sql?: string): TabState {
+function nextQueryNumber(existingTabs: { name: string }[]): number {
+  const used = new Set<number>();
+  for (const t of existingTabs) {
+    const m = /^Query (\d+)$/.exec(t.name);
+    if (m) used.add(Number(m[1]));
+  }
+  let n = 1;
+  while (used.has(n)) n++;
+  return n;
+}
+
+function createTab(existingTabs: { name: string }[], name?: string, sql?: string): TabState {
   return {
     id: crypto.randomUUID(),
-    name: name ?? `Query ${tabCounter++}`,
+    name: name ?? `Query ${nextQueryNumber(existingTabs)}`,
     sql: sql ?? "SELECT TOP 100 * FROM ",
     result: null,
     resultSql: null,
@@ -58,20 +70,69 @@ function createTab(name?: string, sql?: string): TabState {
 }
 
 export default function EditorTabsManager() {
-  const [tabs, setTabs] = useState<TabState[]>(() => [createTab()]);
+  const [tabs, setTabs] = useState<TabState[]>(() => [createTab([])]);
   const [activeTabId, setActiveTabId] = useState<string>(() => tabs[0].id);
+  const [loaded, setLoaded] = useState(false);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
   const renameInputRef = useRef<HTMLInputElement | null>(null);
 
   const activeTab = tabs.find((t) => t.id === activeTabId) ?? tabs[0];
 
+  // Load persisted tabs from SQLite on mount
+  useEffect(() => {
+    fetch("/api/editor-tabs")
+      .then((r) => r.json())
+      .then((data: PersistedEditorState) => {
+        if (Array.isArray(data.tabs) && data.tabs.length > 0) {
+          const restored: TabState[] = data.tabs.map((pt) => ({
+            id: pt.id,
+            name: pt.name,
+            sql: pt.sql,
+            result: null,
+            resultSql: null,
+            previousResult: null,
+            previousSql: null,
+            baselinePinned: false,
+            baselinePinnedAt: null,
+            running: false,
+            activeResultTab: "results" as ResultTabName,
+            statsEnabled: false,
+            planEnabled: false,
+            compareEnabled: false,
+          }));
+          setTabs(restored);
+          const valid = restored.some((t) => t.id === data.activeTabId);
+          setActiveTabId(valid ? data.activeTabId : restored[0].id);
+        }
+      })
+      .catch(() => { /* server unavailable — keep the initial tab */ })
+      .finally(() => setLoaded(true));
+  }, []);
+
+  // Save tab state to SQLite on every change (debounced 500ms)
+  useEffect(() => {
+    if (!loaded) return;
+    const state: PersistedEditorState = {
+      tabs: tabs.map((t) => ({ id: t.id, name: t.name, sql: t.sql })),
+      activeTabId,
+    };
+    const timer = setTimeout(() => {
+      fetch("/api/editor-tabs", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(state),
+      }).catch(() => {});
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [tabs, activeTabId, loaded]);
+
   function updateTab(id: string, updates: Partial<TabState>) {
     setTabs((prev) => prev.map((t) => (t.id === id ? { ...t, ...updates } : t)));
   }
 
   function addTab(name?: string, sql?: string) {
-    const newTab = createTab(name, sql);
+    const newTab = createTab(tabs, name, sql);
     setTabs((prev) => [...prev, newTab]);
     setActiveTabId(newTab.id);
   }
