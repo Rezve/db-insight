@@ -18,6 +18,7 @@ export async function GET(req: NextRequest) {
   if (!session.connected || !session.sessionId) {
     return NextResponse.json({ error: "Not connected" }, { status: 401 });
   }
+  const sessionId = session.sessionId;
 
   const { searchParams } = new URL(req.url);
   const table = searchParams.get("table");
@@ -47,7 +48,7 @@ export async function GET(req: NextRequest) {
       dataType: string;
       isNullable: string;
       maxLength: number | null;
-    }>(session.sessionId, SQL_SCHEMA_COLUMNS);
+    }>(sessionId, SQL_SCHEMA_COLUMNS);
 
     tableColumns = colRows.filter(
       (r) => r.tableSchema === schema && r.tableName === tableName
@@ -80,7 +81,7 @@ export async function GET(req: NextRequest) {
         const sampleClause = buildSampleClause(schema, tableName, sampleSize);
 
         const countRows = await executeQuery<{ cnt: number }>(
-          session.sessionId,
+          sessionId,
           `SELECT COUNT(*) AS [cnt] FROM ${sampleClause}`
         );
         const actualRowsScanned = Number(countRows[0]?.cnt ?? 0);
@@ -128,7 +129,7 @@ export async function GET(req: NextRequest) {
             maxValue?: number;
             avgValue?: number;
             stddev?: number;
-          }>(session.sessionId, baseQuery);
+          }>(sessionId, baseQuery);
 
           const base = baseRows[0];
 
@@ -149,7 +150,7 @@ export async function GET(req: NextRequest) {
             `;
             try {
               const topRows = await executeQuery<{ value: string; count: number; percentage: number }>(
-                session.sessionId,
+                sessionId,
                 topQuery
               );
               topValues = topRows.map((r) => ({
