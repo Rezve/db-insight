@@ -21,6 +21,12 @@ interface ColumnDistributionProps {
   sampleSize: SampleSize;
 }
 
+type ProgressState = {
+  current: number;
+  total: number;
+  message: string;
+} | null;
+
 function StatBadge({ label, value }: { label: string; value: string | number }) {
   return (
     <div className="text-center">
@@ -118,20 +124,61 @@ export default function ColumnDistribution({ tableName, sampleSize }: ColumnDist
   const [data, setData] = useState<DistributionResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [progress, setProgress] = useState<ProgressState>(null);
 
   const load = useCallback(() => {
     setLoading(true);
     setError(null);
+    setData(null);
+    setProgress(null);
+
     fetch(
       `/api/analysis/distribution?table=${encodeURIComponent(tableName)}&sampleSize=${sampleSize}`
     )
-      .then((r) => r.json())
-      .then((d) => {
-        if (d.error) setError(d.error);
-        else setData(d);
+      .then(async (res) => {
+        if (!res.ok || !res.body) {
+          const json = await res.json().catch(() => ({ error: "Request failed" }));
+          setError(json.error ?? "Request failed");
+          return;
+        }
+
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split("\n");
+          buffer = lines.pop() ?? "";
+
+          for (const line of lines) {
+            const trimmed = line.trim();
+            if (!trimmed) continue;
+            try {
+              const event = JSON.parse(trimmed);
+              if (event.type === "start") {
+                setProgress({ current: 0, total: event.totalColumns, message: event.message });
+              } else if (event.type === "progress") {
+                setProgress({ current: event.current, total: event.total, message: event.message });
+              } else if (event.type === "complete") {
+                setData(event.data as DistributionResult);
+              } else if (event.type === "error") {
+                setError(event.error);
+              }
+            } catch {
+              // Malformed line — skip
+            }
+          }
+        }
       })
       .catch(() => setError("Failed to load distribution data"))
-      .finally(() => setLoading(false));
+      .finally(() => {
+        setLoading(false);
+        setProgress(null);
+      });
   }, [tableName, sampleSize]);
 
   useEffect(() => {
@@ -140,10 +187,34 @@ export default function ColumnDistribution({ tableName, sampleSize }: ColumnDist
 
   if (loading) {
     return (
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {Array.from({ length: 4 }).map((_, i) => (
-          <Skeleton key={i} className="h-48" />
-        ))}
+      <div className="space-y-4">
+        {progress && (
+          <div className="rounded-lg border bg-card p-4 space-y-2">
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-muted-foreground">{progress.message}</span>
+              {progress.total > 0 && (
+                <span className="text-xs text-muted-foreground tabular-nums">
+                  {progress.current} / {progress.total}
+                </span>
+              )}
+            </div>
+            {progress.total > 0 && (
+              <div className="h-1.5 w-full rounded-full bg-muted overflow-hidden">
+                <div
+                  className="h-full rounded-full bg-primary transition-all duration-300"
+                  style={{
+                    width: `${Math.round((progress.current / progress.total) * 100)}%`,
+                  }}
+                />
+              </div>
+            )}
+          </div>
+        )}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {Array.from({ length: progress?.total ? Math.min(progress.total, 8) : 4 }).map((_, i) => (
+            <Skeleton key={i} className="h-48" />
+          ))}
+        </div>
       </div>
     );
   }
