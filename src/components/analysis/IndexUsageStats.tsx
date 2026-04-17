@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { ArrowUpDown } from "lucide-react";
 import { Trash2 } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -53,10 +54,15 @@ function formatUptime(isoStart: string): string {
 }
 
 export default function IndexUsageStats({ tableName }: IndexUsageStatsProps) {
+  type SortKey = "seeks" | "scans" | "lookups" | "lastActivity";
+  type SortDir = "asc" | "desc";
+
   const [stats, setStats] = useState<IndexUsageStat[]>([]);
   const [serverStartTime, setServerStartTime] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [sortKey, setSortKey] = useState<SortKey | null>(null);
+  const [sortDir, setSortDir] = useState<SortDir>("desc");
 
   useEffect(() => {
     setLoading(true);
@@ -73,8 +79,55 @@ export default function IndexUsageStats({ tableName }: IndexUsageStatsProps) {
       .finally(() => setLoading(false));
   }, [tableName]);
 
+  const sorted = useMemo(() => {
+    if (sortKey === null) return stats;
+    return [...stats].sort((a, b) => {
+      let cmp = 0;
+      if (sortKey === "seeks") cmp = a.userSeeks - b.userSeeks;
+      if (sortKey === "scans") cmp = a.userScans - b.userScans;
+      if (sortKey === "lookups") cmp = a.userLookups - b.userLookups;
+      if (sortKey === "lastActivity") {
+        const aTime = Math.max(
+          a.lastUserSeek ? new Date(a.lastUserSeek).getTime() : 0,
+          a.lastUserScan ? new Date(a.lastUserScan).getTime() : 0,
+          a.lastUserLookup ? new Date(a.lastUserLookup).getTime() : 0,
+        );
+        const bTime = Math.max(
+          b.lastUserSeek ? new Date(b.lastUserSeek).getTime() : 0,
+          b.lastUserScan ? new Date(b.lastUserScan).getTime() : 0,
+          b.lastUserLookup ? new Date(b.lastUserLookup).getTime() : 0,
+        );
+        cmp = aTime - bTime;
+      }
+      return sortDir === "asc" ? cmp : -cmp;
+    });
+  }, [stats, sortKey, sortDir]);
+
   if (loading) return <Skeleton className="h-40 w-full" />;
   if (error) return <p className="text-destructive text-sm">{error}</p>;
+
+  function toggleSort(key: SortKey) {
+    if (sortKey === key) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortKey(key);
+      setSortDir("desc");
+    }
+  }
+
+  function SortableHead({ label, k }: { label: string; k: SortKey }) {
+    return (
+      <TableHead
+        className="cursor-pointer select-none whitespace-nowrap"
+        onClick={() => toggleSort(k)}
+      >
+        <span className="flex items-center gap-1">
+          {label}
+          <ArrowUpDown className={`h-3 w-3 ${sortKey === k ? "text-foreground" : "text-muted-foreground/40"}`} />
+        </span>
+      </TableHead>
+    );
+  }
 
   const maxSeeks = Math.max(...stats.map((s) => s.userSeeks), 1);
   const maxScans = Math.max(...stats.map((s) => s.userScans), 1);
@@ -117,16 +170,16 @@ export default function IndexUsageStats({ tableName }: IndexUsageStatsProps) {
           <TableHeader>
             <TableRow>
               <TableHead>Index</TableHead>
-              <TableHead>Seeks</TableHead>
-              <TableHead>Scans</TableHead>
-              <TableHead>Lookups</TableHead>
+              <SortableHead label="Seeks" k="seeks" />
+              <SortableHead label="Scans" k="scans" />
+              <SortableHead label="Lookups" k="lookups" />
               <TableHead>Updates</TableHead>
               <TableHead>Size (GB)</TableHead>
-              <TableHead>Last Activity</TableHead>
+              <SortableHead label="Last Activity" k="lastActivity" />
             </TableRow>
           </TableHeader>
           <TableBody>
-            {stats.map((stat) => {
+            {sorted.map((stat) => {
               const lastActivity = [stat.lastUserSeek, stat.lastUserScan, stat.lastUserLookup]
                 .filter(Boolean)
                 .sort()
