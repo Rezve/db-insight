@@ -2,6 +2,7 @@
 
 import { useRef, useState, useCallback, useEffect } from "react";
 import { useTheme } from "next-themes";
+import { useEditorFontSize } from "@/hooks/use-editor-font-size";
 import dynamic from "next/dynamic";
 import type { editor, languages, IRange } from "monaco-editor";
 import { toast } from "sonner";
@@ -88,6 +89,7 @@ export default function SqlEditor({
   onActiveResultTabChange,
 }: SqlEditorProps) {
   const { resolvedTheme } = useTheme();
+  const { fontSize: editorFontSize, setFontSize, min: minFontSize, max: maxFontSize } = useEditorFontSize();
   const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const monacoRef = useRef<typeof import("monaco-editor") | null>(null);
@@ -218,6 +220,23 @@ export default function SqlEditor({
       monacoInstance.KeyMod.Alt | monacoInstance.KeyMod.Shift | monacoInstance.KeyCode.KeyF,
       () => formatQuery()
     );
+
+    // Ctrl+Wheel to zoom font size
+    const domNode = editorInstance.getDomNode();
+    if (domNode) {
+      domNode.addEventListener(
+        "wheel",
+        (e: WheelEvent) => {
+          if (!e.ctrlKey) return;
+          e.preventDefault();
+          const current = editorInstance.getOption(monacoInstance.editor.EditorOption.fontSize);
+          const next = Math.min(maxFontSize, Math.max(minFontSize, current + (e.deltaY < 0 ? 1 : -1)));
+          editorInstance.updateOptions({ fontSize: next });
+          setFontSize(next);
+        },
+        { passive: false }
+      );
+    }
   }
 
   function formatQuery() {
@@ -239,7 +258,15 @@ export default function SqlEditor({
 
     let formatted: string;
     try {
-      formatted = formatSql(rawSql, { language: "tsql", tabWidth: 2, keywordCase: "upper" });
+      formatted = formatSql(rawSql, {
+        language: "tsql",
+        tabWidth: 2,
+        keywordCase: "upper",
+        expressionWidth: 100,
+        logicalOperatorNewline: "before",
+        newlineBeforeSemicolon: false,
+        linesBetweenQueries: 2,
+      });
     } catch {
       toast.error("Could not format the query");
       return;
@@ -529,7 +556,7 @@ export default function SqlEditor({
           theme={resolvedTheme === "dark" ? "vs-dark" : "vs"}
           options={{
             minimap: { enabled: false },
-            fontSize: 14,
+            fontSize: editorFontSize,
             fontFamily: "var(--font-geist-mono), 'Cascadia Code', 'Fira Code', monospace",
             lineNumbers: "on",
             scrollBeyondLastLine: false,

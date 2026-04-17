@@ -1,8 +1,9 @@
 "use client";
 
 import { useTheme } from "next-themes";
-import { Sun, Moon, Monitor } from "lucide-react";
+import { Sun, Moon, Monitor, Minus, Plus } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useEditorFontSize } from "@/hooks/use-editor-font-size";
 
 const themeOptions = [
   { value: "light", label: "Light", icon: Sun },
@@ -12,6 +13,7 @@ const themeOptions = [
 
 export default function SettingsPage() {
   const { theme, setTheme } = useTheme();
+  const { fontSize, setFontSize, min, max } = useEditorFontSize();
 
   return (
     <div className="p-6 max-w-lg">
@@ -40,6 +42,46 @@ export default function SettingsPage() {
               {label}
             </button>
           ))}
+        </div>
+      </section>
+
+      <section className="mt-8">
+        <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground mb-1">
+          SQL Editor
+        </h2>
+        <p className="text-sm text-muted-foreground mb-3">
+          Adjust the font size of the SQL editor.
+        </p>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => setFontSize(fontSize - 1)}
+            disabled={fontSize <= min}
+            className={cn(
+              "flex items-center justify-center rounded-md w-8 h-8 border transition-colors",
+              fontSize <= min
+                ? "opacity-40 cursor-not-allowed border-transparent"
+                : "text-zinc-600 dark:text-zinc-400 border-transparent hover:bg-zinc-100 dark:hover:bg-zinc-800"
+            )}
+            aria-label="Decrease font size"
+          >
+            <Minus className="h-4 w-4" />
+          </button>
+          <span className="text-sm w-16 text-center tabular-nums">
+            {fontSize}px
+          </span>
+          <button
+            onClick={() => setFontSize(fontSize + 1)}
+            disabled={fontSize >= max}
+            className={cn(
+              "flex items-center justify-center rounded-md w-8 h-8 border transition-colors",
+              fontSize >= max
+                ? "opacity-40 cursor-not-allowed border-transparent"
+                : "text-zinc-600 dark:text-zinc-400 border-transparent hover:bg-zinc-100 dark:hover:bg-zinc-800"
+            )}
+            aria-label="Increase font size"
+          >
+            <Plus className="h-4 w-4" />
+          </button>
         </div>
       </section>
     </div>
