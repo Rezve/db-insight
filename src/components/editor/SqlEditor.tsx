@@ -88,6 +88,15 @@ export default function SqlEditor({
   activeResultTab,
   onActiveResultTabChange,
 }: SqlEditorProps) {
+  function formatDuration(ms: number): string {
+    if (ms < 1000) return `${ms}ms`;
+    const m = Math.floor(ms / 60000);
+    const s = Math.floor((ms % 60000) / 1000);
+    const rem = ms % 1000;
+    if (m > 0) return `${m}m ${s}s ${rem}ms`;
+    return `${s}s ${rem}ms`;
+  }
+
   const { resolvedTheme } = useTheme();
   const { fontSize: editorFontSize, setFontSize, min: minFontSize, max: maxFontSize } = useEditorFontSize();
   const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null);
@@ -418,60 +427,54 @@ export default function SqlEditor({
   return (
     <div ref={containerRef} className="flex flex-col h-full">
       {/* Toolbar */}
-      <div className="flex items-center gap-2 px-4 py-2 border-b bg-zinc-50 dark:bg-zinc-900">
+      <div className="flex items-center gap-2 px-4 py-1 border-b bg-zinc-50 dark:bg-zinc-900">
         {running ? (
           <Button
             size="sm"
             variant="destructive"
             onClick={cancelQuery}
-            className="gap-1.5 min-w-32 justify-center"
+            className="h-7 w-7 p-0"
             title="Cancel query"
           >
             <X className="h-4 w-4" />
-            Cancel
           </Button>
         ) : (
           <Button
             size="sm"
             onClick={() => runQuery()}
-            className="gap-1.5 min-w-32 justify-center"
+            className="h-7 w-7 p-0"
             title={hasSelection ? "Run selected text (Ctrl+Enter)" : "Run query (Ctrl+Enter)"}
           >
             <Play className="h-4 w-4" />
-            {hasSelection ? "Run Selected" : "Run"}
           </Button>
         )}
-        <span className="text-xs text-muted-foreground">or Ctrl+Enter</span>
         <Button
           size="sm"
           variant="outline"
           onClick={formatQuery}
-          className="gap-1.5 text-xs"
+          className="h-7 w-7 p-0"
           title="Format SQL (Alt+Shift+F)"
         >
           <WandSparkles className="h-3.5 w-3.5" />
-          Format
         </Button>
         <div className="mx-2 h-4 w-px bg-border" />
         <Button
           size="sm"
           variant={statsEnabled ? "default" : "outline"}
           onClick={() => onStatsEnabledChange(!statsEnabled)}
-          className="gap-1.5 text-xs"
+          className="h-7 w-7 p-0"
           title={statsEnabled ? "Statistics IO/TIME ON — click to disable" : "Enable Statistics IO/TIME for every query"}
         >
           <BarChart2 className="h-3.5 w-3.5" />
-          Statistics {statsEnabled ? "ON" : "OFF"}
         </Button>
         <Button
           size="sm"
           variant={planEnabled ? "default" : "outline"}
           onClick={() => onPlanEnabledChange(!planEnabled)}
-          className="gap-1.5 text-xs"
+          className="h-7 w-7 p-0"
           title={planEnabled ? "Query Plan ON — click to disable" : "Enable execution plan capture"}
         >
           <GitBranch className="h-3.5 w-3.5" />
-          Query Plan {planEnabled ? "ON" : "OFF"}
         </Button>
         <Button
           size="sm"
@@ -483,7 +486,7 @@ export default function SqlEditor({
               toast.info("Tip: enable Statistics and Query Plan for richer comparisons.");
             }
           }}
-          className="gap-1.5 text-xs"
+          className="h-7 w-7 p-0"
           title={
             compareEnabled
               ? "Compare ON — diffs last two runs. Click to disable."
@@ -491,7 +494,6 @@ export default function SqlEditor({
           }
         >
           <GitCompare className="h-3.5 w-3.5" />
-          Compare {compareEnabled ? "ON" : "OFF"}
         </Button>
         {compareEnabled && (
           <Button
@@ -508,7 +510,7 @@ export default function SqlEditor({
                 toast.success("Baseline pinned — future runs will compare against this query.");
               }
             }}
-            className="gap-1.5 text-xs"
+            className="h-7 w-7 p-0"
             title={
               baselinePinned
                 ? "Baseline pinned — click to unpin and resume auto-rolling compare."
@@ -522,14 +524,13 @@ export default function SqlEditor({
             ) : (
               <Pin className="h-3.5 w-3.5" />
             )}
-            {baselinePinned ? "Pinned" : "Pin baseline"}
           </Button>
         )}
         <div className="flex-1" />
         {result && !result.error && (
           <span className="flex items-center gap-1 text-xs text-muted-foreground">
             <Clock className="h-3.5 w-3.5" />
-            {result.durationMs}ms · {result.rowCount} rows
+            {formatDuration(result.durationMs)} · {result.rowCount} rows
           </span>
         )}
         <Button

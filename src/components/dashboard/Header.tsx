@@ -44,13 +44,13 @@ export default function Header({ serverName, databaseName }: HeaderProps) {
   }
 
   return (
-    <header className="flex h-14 items-center gap-3 border-b bg-background px-6">
-      <Database className="h-4 w-4 text-muted-foreground" />
-      <div className="flex items-center gap-2 flex-1 min-w-0">
-        <span className="text-sm font-medium truncate" title={serverName}>
+    <header className="flex h-9 items-center gap-2 border-b bg-background px-3">
+      <Database className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+      <div className="flex items-center gap-1.5 flex-1 min-w-0">
+        <span className="text-xs font-medium truncate" title={serverName}>
           {formatServerName(serverName)}
         </span>
-        <span className="text-muted-foreground">/</span>
+        <span className="text-muted-foreground text-xs">/</span>
         <Badge variant="secondary" className="font-mono text-xs">
           {databaseName}
         </Badge>
@@ -60,15 +60,13 @@ export default function Header({ serverName, databaseName }: HeaderProps) {
         size="sm"
         onClick={handleDisconnect}
         disabled={disconnecting}
-        className="text-muted-foreground hover:text-destructive"
+        className="h-6 w-6 p-0 text-muted-foreground hover:text-destructive"
+        title="Disconnect"
       >
         {disconnecting ? (
-          <Loader2 className="h-4 w-4 animate-spin" />
+          <Loader2 className="h-3.5 w-3.5 animate-spin" />
         ) : (
-          <>
-            <LogOut className="h-4 w-4 mr-1" />
-            Disconnect
-          </>
+          <LogOut className="h-3.5 w-3.5" />
         )}
       </Button>
     </header>
