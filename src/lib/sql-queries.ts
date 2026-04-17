@@ -124,6 +124,10 @@ INNER JOIN sys.dm_db_partition_stats ps ON t.object_id = ps.object_id
 GROUP BY s.name, t.name
 `;
 
+export const SQL_SERVER_START_TIME = `
+SELECT sqlserver_start_time AS [serverStartTime] FROM sys.dm_os_sys_info
+`;
+
 export const SQL_INDEX_USAGE = `
 SELECT
     i.name                          AS [indexName],
@@ -134,7 +138,14 @@ SELECT
     ISNULL(us.user_updates, 0)      AS [userUpdates],
     us.last_user_seek               AS [lastUserSeek],
     us.last_user_scan               AS [lastUserScan],
-    us.last_user_lookup             AS [lastUserLookup]
+    us.last_user_lookup             AS [lastUserLookup],
+    CAST(
+        ROUND(
+            (SELECT SUM(ps.reserved_page_count)
+             FROM sys.dm_db_partition_stats ps
+             WHERE ps.object_id = i.object_id AND ps.index_id = i.index_id
+            ) * 8192.0 / (1024.0 * 1024.0 * 1024.0), 4)
+    AS DECIMAL(18, 4))              AS [sizeGB]
 FROM sys.indexes i
 INNER JOIN sys.tables  t  ON i.object_id = t.object_id
 INNER JOIN sys.schemas s  ON t.schema_id = s.schema_id

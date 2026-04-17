@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { ArrowUpDown } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -22,6 +23,51 @@ export default function IndexList({ tableName }: IndexListProps) {
   const [indexes, setIndexes] = useState<IndexInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  type SortKey = "name" | "size" | "type" | "properties";
+  type SortDir = "asc" | "desc";
+  const [sortKey, setSortKey] = useState<SortKey | null>(null);
+  const [sortDir, setSortDir] = useState<SortDir>("asc");
+
+  function toggleSort(key: SortKey) {
+    if (sortKey === key) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortKey(key);
+      setSortDir("asc");
+    }
+  }
+
+  function SortableHead({ label, k }: { label: string; k: SortKey }) {
+    return (
+      <TableHead
+        className="cursor-pointer select-none whitespace-nowrap"
+        onClick={() => toggleSort(k)}
+      >
+        <span className="flex items-center gap-1">
+          {label}
+          <ArrowUpDown className={`h-3 w-3 ${sortKey === k ? "text-foreground" : "text-muted-foreground/40"}`} />
+        </span>
+      </TableHead>
+    );
+  }
+
+  const sorted = useMemo(() => {
+    return [...indexes].sort((a, b) => {
+      if (sortKey === null) {
+        // Default: PK first, then unique, then others; ties broken by name
+        const rank = (i: IndexInfo) => (i.isPrimaryKey ? 0 : i.isUnique ? 1 : 2);
+        return rank(a) - rank(b) || a.indexName.localeCompare(b.indexName);
+      }
+      const propRank = (i: IndexInfo) => (i.isPrimaryKey ? 0 : i.isUnique ? 1 : i.isDisabled ? 2 : i.filterDefinition ? 3 : 4);
+      let cmp = 0;
+      if (sortKey === "name") cmp = a.indexName.localeCompare(b.indexName);
+      if (sortKey === "size") cmp = (a.sizeGB ?? 0) - (b.sizeGB ?? 0);
+      if (sortKey === "type") cmp = a.type.localeCompare(b.type);
+      if (sortKey === "properties") cmp = propRank(a) - propRank(b);
+      return sortDir === "asc" ? cmp : -cmp;
+    });
+  }, [indexes, sortKey, sortDir]);
 
   useEffect(() => {
     setLoading(true);
@@ -47,16 +93,16 @@ export default function IndexList({ tableName }: IndexListProps) {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Name</TableHead>
-              <TableHead>Type</TableHead>
+              <SortableHead label="Name" k="name" />
+              <SortableHead label="Type" k="type" />
               <TableHead>Key Columns</TableHead>
               <TableHead>Included Columns</TableHead>
-              <TableHead>Size (GB)</TableHead>
-              <TableHead>Properties</TableHead>
+              <SortableHead label="Size (GB)" k="size" />
+              <SortableHead label="Properties" k="properties" />
             </TableRow>
           </TableHeader>
           <TableBody>
-            {indexes.map((idx) => {
+            {sorted.map((idx) => {
               const keyColumns = idx.columns
                 .filter((c) => !c.isIncluded)
                 .sort((a, b) => a.keyOrdinal - b.keyOrdinal)

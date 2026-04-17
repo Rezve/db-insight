@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { Trash2 } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -38,8 +39,22 @@ function UsageBar({ value, max }: { value: number; max: number }) {
   );
 }
 
+function formatUptime(isoStart: string): string {
+  const diffMs = Date.now() - new Date(isoStart).getTime();
+  const totalMinutes = Math.floor(diffMs / 60000);
+  const months = Math.floor(totalMinutes / 43200);
+  const days = Math.floor((totalMinutes % 43200) / 1440);
+  const hours = Math.floor((totalMinutes % 1440) / 60);
+  const parts: string[] = [];
+  if (months > 0) parts.push(`${months}mo`);
+  if (days > 0) parts.push(`${days}d`);
+  if (hours > 0 || parts.length === 0) parts.push(`${hours}h`);
+  return parts.join(" ");
+}
+
 export default function IndexUsageStats({ tableName }: IndexUsageStatsProps) {
   const [stats, setStats] = useState<IndexUsageStat[]>([]);
+  const [serverStartTime, setServerStartTime] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -49,7 +64,10 @@ export default function IndexUsageStats({ tableName }: IndexUsageStatsProps) {
       .then((r) => r.json())
       .then((data) => {
         if (data.error) setError(data.error);
-        else setStats(data.usageStats ?? []);
+        else {
+          setStats(data.usageStats ?? []);
+          setServerStartTime(data.serverStartTime ?? null);
+        }
       })
       .catch(() => setError("Failed to load index usage"))
       .finally(() => setLoading(false));
@@ -62,6 +80,11 @@ export default function IndexUsageStats({ tableName }: IndexUsageStatsProps) {
   const maxScans = Math.max(...stats.map((s) => s.userScans), 1);
   const maxUpdates = Math.max(...stats.map((s) => s.userUpdates), 1);
 
+  const unusedIndexes = stats.filter(
+    (s) => s.userSeeks + s.userScans + s.userLookups === 0
+  );
+  const unusedSizeGB = unusedIndexes.reduce((sum, s) => sum + (s.sizeGB ?? 0), 0);
+
   return (
     <Card>
       <CardHeader className="pb-3">
@@ -69,9 +92,26 @@ export default function IndexUsageStats({ tableName }: IndexUsageStatsProps) {
           Index Usage Statistics
           <Badge variant="outline" className="text-[10px] font-normal">
             Since last SQL Server restart
+            {serverStartTime && (
+              <span className="ml-1 text-muted-foreground">· {formatUptime(serverStartTime)} ago</span>
+            )}
           </Badge>
         </CardTitle>
       </CardHeader>
+      {unusedIndexes.length > 0 && (
+        <div className="mx-6 mb-3 flex items-center gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-400">
+          <Trash2 className="h-3.5 w-3.5 shrink-0" />
+          <span>
+            <span className="font-semibold">{unusedIndexes.length} unused {unusedIndexes.length === 1 ? "index" : "indexes"}</span>
+            {unusedSizeGB > 0 && (
+              <> — dropping {unusedIndexes.length === 1 ? "it" : "them"} could reclaim{" "}
+              <span className="font-semibold">
+                {unusedSizeGB < 0.001 ? "< 0.001" : unusedSizeGB.toFixed(3)} GB
+              </span></>
+            )}
+          </span>
+        </div>
+      )}
       <CardContent className="p-0">
         <Table>
           <TableHeader>
@@ -81,6 +121,7 @@ export default function IndexUsageStats({ tableName }: IndexUsageStatsProps) {
               <TableHead>Scans</TableHead>
               <TableHead>Lookups</TableHead>
               <TableHead>Updates</TableHead>
+              <TableHead>Size (GB)</TableHead>
               <TableHead>Last Activity</TableHead>
             </TableRow>
           </TableHeader>
@@ -116,6 +157,13 @@ export default function IndexUsageStats({ tableName }: IndexUsageStatsProps) {
                   </TableCell>
                   <TableCell>
                     <UsageBar value={stat.userUpdates} max={maxUpdates} />
+                  </TableCell>
+                  <TableCell className="text-xs tabular-nums text-right">
+                    {stat.sizeGB == null
+                      ? "—"
+                      : stat.sizeGB < 0.001
+                      ? "< 0.001"
+                      : stat.sizeGB.toFixed(3)}
                   </TableCell>
                   <TableCell className="text-xs text-muted-foreground">
                     {formatDate(lastActivity ?? null)}

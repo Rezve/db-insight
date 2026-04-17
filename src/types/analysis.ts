@@ -57,6 +57,7 @@ export interface IndexUsageStat {
   lastUserSeek: string | null;
   lastUserScan: string | null;
   lastUserLookup: string | null;
+  sizeGB: number | null;
 }
 
 export interface TableColumnDetail {
