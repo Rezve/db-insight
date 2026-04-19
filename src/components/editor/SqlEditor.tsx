@@ -16,6 +16,7 @@ import StatisticsPanel from "./StatisticsPanel";
 import QueryPlanVisualizer from "./QueryPlanVisualizer";
 import QueryPlanText from "./QueryPlanText";
 import CompareView from "./CompareView";
+import QueryPickerModal from "./QueryPickerModal";
 import type { SchemaData } from "@/types/db";
 
 // Monaco must not be SSR'd
@@ -110,6 +111,9 @@ export default function SqlEditor({
   const [editorHeightPx, setEditorHeightPx] = useState(260);
   const queryStartRef = useRef<number | null>(null);
   const [elapsedMs, setElapsedMs] = useState(0);
+  const [queryPickerOpen, setQueryPickerOpen] = useState(false);
+  const [queryPickerOptions, setQueryPickerOptions] = useState<string[]>([]);
+  const [queryPickerDefaultIndex, setQueryPickerDefaultIndex] = useState(0);
 
   // Load schema for autocomplete once on mount
   useEffect(() => {
@@ -305,8 +309,64 @@ export default function SqlEditor({
     toast.success(hasActiveSelection ? "Selection formatted" : "Query formatted");
   }
 
+  function splitSqlQueries(text: string): { text: string; startLine: number }[] {
+    // Split on GO batch separator first (T-SQL specific)
+    const goPattern = /^\s*GO\s*$/im;
+    if (goPattern.test(text)) {
+      const results: { text: string; startLine: number }[] = [];
+      const globalGo = /^\s*GO\s*$/gim;
+      let lastEnd = 0;
+      let lineOffset = 1;
+      let match: RegExpExecArray | null;
+      while ((match = globalGo.exec(text)) !== null) {
+        const segment = text.slice(lastEnd, match.index).trim();
+        if (segment) results.push({ text: segment, startLine: lineOffset });
+        const consumed = text.slice(lastEnd, match.index + match[0].length);
+        lineOffset += (consumed.match(/\n/g) ?? []).length;
+        lastEnd = match.index + match[0].length;
+      }
+      const tail = text.slice(lastEnd).trim();
+      if (tail) results.push({ text: tail, startLine: lineOffset });
+      if (results.length > 1) return results;
+    }
+
+    // Split on semicolons, skipping those inside single-quoted strings and block comments
+    const statements: { text: string; startLine: number }[] = [];
+    let current = "";
+    let inString = false;
+    let inBlockComment = false;
+    let currentLine = 1;
+    let segmentStartLine = 1;
+
+    for (let i = 0; i < text.length; i++) {
+      const ch = text[i];
+      const next = text[i + 1];
+
+      if (ch === "\n") currentLine++;
+
+      if (!inString && !inBlockComment && ch === "'") { inString = true; current += ch; continue; }
+      if (inString && ch === "'" && next === "'") { current += "''"; i++; continue; }
+      if (inString && ch === "'") { inString = false; current += ch; continue; }
+      if (!inString && !inBlockComment && ch === "/" && next === "*") { inBlockComment = true; current += "/*"; i++; continue; }
+      if (inBlockComment && ch === "*" && next === "/") { inBlockComment = false; current += "*/"; i++; continue; }
+
+      if (!inString && !inBlockComment && ch === ";") {
+        const trimmed = current.trim();
+        if (trimmed) statements.push({ text: trimmed, startLine: segmentStartLine });
+        current = "";
+        segmentStartLine = currentLine + 1;
+      } else {
+        current += ch;
+      }
+    }
+    const remaining = current.trim();
+    if (remaining) statements.push({ text: remaining, startLine: segmentStartLine });
+    return statements;
+  }
+
   async function runQuery(queryText?: string) {
     let rawSql: string;
+    let hasUserSelection = false;
     if (queryText !== undefined) {
       rawSql = queryText;
     } else {
@@ -314,10 +374,12 @@ export default function SqlEditor({
       if (editorInstance) {
         const sel = editorInstance.getSelection();
         const model = editorInstance.getModel();
-        rawSql =
-          sel && model && !sel.isEmpty()
-            ? model.getValueInRange(sel)
-            : editorInstance.getValue();
+        if (sel && model && !sel.isEmpty()) {
+          rawSql = model.getValueInRange(sel);
+          hasUserSelection = true;
+        } else {
+          rawSql = editorInstance.getValue();
+        }
       } else {
         rawSql = sql;
       }
@@ -325,6 +387,22 @@ export default function SqlEditor({
     if (!rawSql.trim()) {
       toast.warning("Enter a SQL query first");
       return;
+    }
+
+    // Show picker when there are multiple queries and the user hasn't selected text or a specific query
+    if (!hasUserSelection && queryText === undefined) {
+      const queries = splitSqlQueries(rawSql);
+      if (queries.length > 1) {
+        const cursorLine = editorRef.current?.getPosition()?.lineNumber ?? 1;
+        let defaultIndex = 0;
+        for (let i = queries.length - 1; i >= 0; i--) {
+          if (queries[i].startLine <= cursorLine) { defaultIndex = i; break; }
+        }
+        setQueryPickerOptions(queries.map(q => q.text));
+        setQueryPickerDefaultIndex(defaultIndex);
+        setQueryPickerOpen(true);
+        return;
+      }
     }
 
     // Build SQL with optional wrappers (stats and/or plan)
@@ -652,6 +730,14 @@ export default function SqlEditor({
           </TabsContent>
         )}
       </Tabs>
+
+      <QueryPickerModal
+        open={queryPickerOpen}
+        queries={queryPickerOptions}
+        defaultIndex={queryPickerDefaultIndex}
+        onSelect={(query) => runQuery(query)}
+        onClose={() => setQueryPickerOpen(false)}
+      />
     </div>
   );
 }
