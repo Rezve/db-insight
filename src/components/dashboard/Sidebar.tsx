@@ -6,7 +6,7 @@ import { usePathname } from "next/navigation";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
-import { Code2, Table2, LayoutDashboard, ChevronDown, Settings, PanelLeftClose, PanelLeftOpen } from "lucide-react";
+import { Code2, Table2, LayoutDashboard, ChevronDown, Settings, PanelLeftClose, PanelLeftOpen, History } from "lucide-react";
 import type { TableInfo } from "@/types/db";
 
 interface SidebarProps {
@@ -19,9 +19,10 @@ export default function Sidebar({ tables }: SidebarProps) {
   const [isCollapsed, setIsCollapsed] = useState(false);
 
   const navLinks = [
-    { href: "/dashboard", label: "Overview", icon: LayoutDashboard },
-    { href: "/dashboard/editor", label: "SQL Editor", icon: Code2 },
-    { href: "/dashboard/settings", label: "Settings", icon: Settings },
+    { href: "/dashboard",         label: "Overview",   icon: LayoutDashboard },
+    { href: "/dashboard/editor",  label: "SQL Editor", icon: Code2 },
+    { href: "/dashboard/history", label: "History",    icon: History },
+    { href: "/dashboard/settings",label: "Settings",   icon: Settings },
   ];
 
   return (

@@ -82,6 +82,14 @@ export async function GET() {
       uptimeMinutes:            Number(srv?.uptimeMinutes ?? 0),
     };
 
+    // Fire-and-forget snapshot — must not block or break the summary response
+    try {
+      const { saveSnapshot } = await import("@/lib/stats-db");
+      saveSnapshot(summary.serverName, summary.databaseName, summary);
+    } catch {
+      // intentionally swallowed
+    }
+
     return NextResponse.json(summary);
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unexpected error";
