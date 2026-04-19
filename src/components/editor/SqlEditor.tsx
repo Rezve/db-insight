@@ -524,18 +524,19 @@ export default function SqlEditor({
         {running ? (
           <Button
             size="sm"
-            variant="destructive"
+            variant="ghost"
             onClick={cancelQuery}
-            className="h-7 w-7 p-0"
+            className="h-7 w-7 p-0 hover:ring-1 hover:ring-border"
             title="Cancel query"
           >
-            <X className="h-4 w-4" />
+            <X className="h-4 w-4 text-destructive" />
           </Button>
         ) : (
           <Button
             size="sm"
+            variant="ghost"
             onClick={() => runQuery()}
-            className="h-7 w-7 p-0"
+            className="h-7 w-7 p-0 hover:ring-1 hover:ring-border"
             title={hasSelection ? "Run selected text (Ctrl+Enter)" : "Run query (Ctrl+Enter)"}
           >
             <Play className="h-4 w-4 text-green-500" />
@@ -543,9 +544,9 @@ export default function SqlEditor({
         )}
         <Button
           size="sm"
-          variant="outline"
+          variant="ghost"
           onClick={formatQuery}
-          className="h-7 w-7 p-0"
+          className="h-7 w-7 p-0 hover:ring-1 hover:ring-border"
           title="Format SQL (Alt+Shift+F)"
         >
           <WandSparkles className="h-3.5 w-3.5" />
@@ -553,25 +554,25 @@ export default function SqlEditor({
         <div className="mx-2 h-4 w-px bg-border" />
         <Button
           size="sm"
-          variant={statsEnabled ? "default" : "outline"}
+          variant="ghost"
           onClick={() => onStatsEnabledChange(!statsEnabled)}
-          className="h-7 w-7 p-0"
+          className={`h-7 w-7 p-0 hover:ring-1 hover:ring-border ${statsEnabled ? "bg-accent text-accent-foreground" : ""}`}
           title={statsEnabled ? "Statistics IO/TIME ON — click to disable" : "Enable Statistics IO/TIME for every query"}
         >
           <BarChart2 className="h-3.5 w-3.5" />
         </Button>
         <Button
           size="sm"
-          variant={planEnabled ? "default" : "outline"}
+          variant="ghost"
           onClick={() => onPlanEnabledChange(!planEnabled)}
-          className="h-7 w-7 p-0"
+          className={`h-7 w-7 p-0 hover:ring-1 hover:ring-border ${planEnabled ? "bg-accent text-accent-foreground" : ""}`}
           title={planEnabled ? "Query Plan ON — click to disable" : "Enable execution plan capture"}
         >
           <GitBranch className="h-3.5 w-3.5" />
         </Button>
         <Button
           size="sm"
-          variant={compareEnabled ? "default" : "outline"}
+          variant="ghost"
           onClick={() => {
             const next = !compareEnabled;
             onCompareEnabledChange(next);
@@ -579,7 +580,7 @@ export default function SqlEditor({
               toast.info("Tip: enable Statistics and Query Plan for richer comparisons.");
             }
           }}
-          className="h-7 w-7 p-0"
+          className={`h-7 w-7 p-0 hover:ring-1 hover:ring-border ${compareEnabled ? "bg-accent text-accent-foreground" : ""}`}
           title={
             compareEnabled
               ? "Compare ON — diffs last two runs. Click to disable."
@@ -591,7 +592,7 @@ export default function SqlEditor({
         {compareEnabled && (
           <Button
             size="sm"
-            variant={baselinePinned ? "default" : "outline"}
+            variant="ghost"
             disabled={!baselinePinned && (!result || !!result.error)}
             onClick={() => {
               if (baselinePinned) {
@@ -603,7 +604,7 @@ export default function SqlEditor({
                 toast.success("Baseline pinned — future runs will compare against this query.");
               }
             }}
-            className="h-7 w-7 p-0"
+            className={`h-7 w-7 p-0 hover:ring-1 hover:ring-border ${baselinePinned ? "bg-accent text-accent-foreground" : ""}`}
             title={
               baselinePinned
                 ? "Baseline pinned — click to unpin and resume auto-rolling compare."
