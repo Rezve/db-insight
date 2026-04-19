@@ -47,6 +47,6 @@ export function buildMssqlConfig(input: ConnectInput, database: string) {
       ...(input.authMode === "windows" ? { trustedConnection: true } : {}),
     },
     connectionTimeout: 15000,
-    requestTimeout: 30000,
+    requestTimeout: 0,
   };
 }

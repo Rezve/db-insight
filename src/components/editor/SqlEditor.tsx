@@ -9,7 +9,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { Play, Trash2, Clock, BarChart2, GitBranch, GitCompare, Pin, PinOff, WandSparkles, X } from "lucide-react";
+import { Play, Clock, BarChart2, GitBranch, GitCompare, Pin, PinOff, WandSparkles, X } from "lucide-react";
 import { format as formatSql } from "sql-formatter";
 import ResultsTable from "./ResultsTable";
 import StatisticsPanel from "./StatisticsPanel";
@@ -108,6 +108,8 @@ export default function SqlEditor({
   const prevTabId = useRef(tabId);
   const [hasSelection, setHasSelection] = useState(false);
   const [editorHeightPx, setEditorHeightPx] = useState(260);
+  const queryStartRef = useRef<number | null>(null);
+  const [elapsedMs, setElapsedMs] = useState(0);
 
   // Load schema for autocomplete once on mount
   useEffect(() => {
@@ -126,6 +128,16 @@ export default function SqlEditor({
       prevTabId.current = tabId;
     }
   }, [tabId, sql]);
+
+  useEffect(() => {
+    if (!running) return;
+    const id = setInterval(() => {
+      if (queryStartRef.current !== null) {
+        setElapsedMs(Date.now() - queryStartRef.current);
+      }
+    }, 100);
+    return () => clearInterval(id);
+  }, [running]);
 
   const registerCompletionProvider = useCallback(
     (monacoInstance: typeof import("monaco-editor")) => {
@@ -333,6 +345,8 @@ export default function SqlEditor({
 
     const controller = new AbortController();
     abortRef.current = controller;
+    queryStartRef.current = Date.now();
+    setElapsedMs(0);
     onRunningChange(true);
     onResultChange(null);
 
@@ -386,6 +400,7 @@ export default function SqlEditor({
         toast.error("Network error");
       }
     } finally {
+      queryStartRef.current = null;
       abortRef.current = null;
       onRunningChange(false);
     }
@@ -527,24 +542,16 @@ export default function SqlEditor({
           </Button>
         )}
         <div className="flex-1" />
-        {result && !result.error && (
+        {(running || (result && !result.error)) && (
           <span className="flex items-center gap-1 text-xs text-muted-foreground">
             <Clock className="h-3.5 w-3.5" />
-            {formatDuration(result.durationMs)} · {result.rowCount} rows
+            <span className="tabular-nums inline-block min-w-[7rem]">
+              {running
+                ? formatDuration(elapsedMs)
+                : `${formatDuration(result!.durationMs)} · ${result!.rowCount} rows`}
+            </span>
           </span>
         )}
-        <Button
-          size="sm"
-          variant="ghost"
-          onClick={() => {
-            editorRef.current?.setValue("");
-            onSqlChange("");
-            onResultChange(null);
-          }}
-          title="Clear editor"
-        >
-          <Trash2 className="h-4 w-4" />
-        </Button>
       </div>
 
       {/* Editor */}
