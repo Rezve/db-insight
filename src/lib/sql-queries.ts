@@ -238,6 +238,91 @@ WHERE c.TABLE_SCHEMA = @schema
 ORDER BY c.ORDINAL_POSITION
 `;
 
+export const SQL_SUMMARY_OBJECT_COUNTS = `
+SELECT
+    (SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_TYPE = 'BASE TABLE')         AS [tableCount],
+    (SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_TYPE = 'VIEW')               AS [viewCount],
+    (SELECT COUNT(*) FROM INFORMATION_SCHEMA.ROUTINES WHERE ROUTINE_TYPE = 'PROCEDURE')      AS [procedureCount],
+    (SELECT COUNT(*) FROM INFORMATION_SCHEMA.ROUTINES WHERE ROUTINE_TYPE = 'FUNCTION')       AS [functionCount],
+    (SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS)                                        AS [totalColumnCount],
+    (SELECT COUNT(DISTINCT TABLE_NAME + '|' + TABLE_SCHEMA)
+     FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS
+     WHERE CONSTRAINT_TYPE = 'PRIMARY KEY')                                                   AS [tablesWithPK],
+    (SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS
+     WHERE CONSTRAINT_TYPE = 'FOREIGN KEY')                                                   AS [foreignKeyCount]
+`;
+
+export const SQL_SUMMARY_STORAGE = `
+SELECT
+    CAST(ROUND(SUM(ps.reserved_page_count) * 8192.0 / 1073741824.0, 4) AS DECIMAL(18,4))   AS [totalSizeGB],
+    CAST(ROUND(SUM(CASE WHEN i.index_id IN (0,1) THEN ps.reserved_page_count ELSE 0 END) * 8192.0 / 1073741824.0, 4) AS DECIMAL(18,4)) AS [dataSizeGB],
+    CAST(ROUND(SUM(CASE WHEN i.index_id > 1 THEN ps.reserved_page_count ELSE 0 END) * 8192.0 / 1073741824.0, 4) AS DECIMAL(18,4))      AS [indexSizeGB],
+    (SELECT TOP 1 s2.name + '.' + t2.name
+     FROM sys.tables t2
+     INNER JOIN sys.schemas s2 ON t2.schema_id = s2.schema_id
+     INNER JOIN sys.dm_db_partition_stats ps2 ON t2.object_id = ps2.object_id
+     GROUP BY s2.name, t2.name
+     ORDER BY SUM(ps2.reserved_page_count) DESC)                                             AS [largestTableName]
+FROM sys.indexes i
+INNER JOIN sys.tables t ON i.object_id = t.object_id
+INNER JOIN sys.dm_db_partition_stats ps ON i.object_id = ps.object_id AND i.index_id = ps.index_id
+`;
+
+export const SQL_SUMMARY_ROW_COUNT = `
+SELECT ISNULL(SUM(p.rows), 0) AS [totalRows]
+FROM sys.partitions p
+INNER JOIN sys.tables t ON p.object_id = t.object_id
+WHERE p.index_id IN (0, 1)
+`;
+
+export const SQL_SUMMARY_INDEX_HEALTH = `
+SELECT
+    COUNT(*)                                                                        AS [totalIndexes],
+    SUM(CASE WHEN i.is_disabled = 1 THEN 1 ELSE 0 END)                             AS [disabledIndexes],
+    (SELECT COUNT(DISTINCT mid.object_id)
+     FROM sys.dm_db_missing_index_details mid
+     WHERE mid.database_id = DB_ID())                                               AS [tablesWithMissingIndexes],
+    (SELECT COUNT(*)
+     FROM sys.dm_db_missing_index_details mid
+     WHERE mid.database_id = DB_ID())                                               AS [missingIndexCount]
+FROM sys.indexes i
+INNER JOIN sys.tables t ON i.object_id = t.object_id
+WHERE i.type > 0
+`;
+
+export const SQL_SUMMARY_INDEX_USAGE = `
+SELECT
+    SUM(ISNULL(us.user_seeks,   0))   AS [totalSeeks],
+    SUM(ISNULL(us.user_scans,   0))   AS [totalScans],
+    SUM(ISNULL(us.user_lookups, 0))   AS [totalLookups],
+    SUM(ISNULL(us.user_updates, 0))   AS [totalUpdates],
+    COUNT(CASE WHEN ISNULL(us.user_seeks,   0)
+                  + ISNULL(us.user_scans,   0)
+                  + ISNULL(us.user_lookups, 0) = 0
+               AND i.type > 0
+               AND i.is_primary_key = 0
+               AND i.is_unique_constraint = 0
+          THEN 1 END)                  AS [unusedIndexCount]
+FROM sys.indexes i
+INNER JOIN sys.tables t ON i.object_id = t.object_id
+LEFT JOIN sys.dm_db_index_usage_stats us
+    ON i.object_id = us.object_id
+    AND i.index_id = us.index_id
+    AND us.database_id = DB_ID()
+WHERE i.type > 0
+`;
+
+export const SQL_SUMMARY_SERVER_INFO = `
+SELECT
+    @@SERVERNAME                                                   AS [serverName],
+    DB_NAME()                                                      AS [databaseName],
+    CAST(SERVERPROPERTY('ProductVersion') AS NVARCHAR(50))         AS [sqlVersion],
+    CAST(SERVERPROPERTY('Edition')        AS NVARCHAR(100))        AS [edition],
+    sqlserver_start_time                                           AS [serverStartTime],
+    DATEDIFF(MINUTE, sqlserver_start_time, GETDATE())              AS [uptimeMinutes]
+FROM sys.dm_os_sys_info
+`;
+
 export function buildCreateTableDDL(
   schema: string,
   tableName: string,

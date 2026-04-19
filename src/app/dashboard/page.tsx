@@ -1,7 +1,7 @@
 import { getSession } from "@/lib/session";
 import { executeQuery } from "@/lib/db";
 import { SQL_LIST_TABLES, SQL_TABLE_SIZES } from "@/lib/sql-queries";
-import TableOverview from "@/components/dashboard/TableOverview";
+import OverviewTabs from "@/components/dashboard/OverviewTabs";
 import type { TableInfo } from "@/types/db";
 
 export default async function DashboardPage() {
@@ -45,7 +45,13 @@ export default async function DashboardPage() {
 
   return (
     <div className="p-6">
-      <TableOverview baseTables={baseTables} views={views} />
+      <div className="mb-6">
+        <h1 className="text-2xl font-bold tracking-tight">Database Overview</h1>
+        <p className="text-muted-foreground text-sm mt-1">
+          {baseTables.length} tables · {views.length} views
+        </p>
+      </div>
+      <OverviewTabs baseTables={baseTables} views={views} />
     </div>
   );
 }

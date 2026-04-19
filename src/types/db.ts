@@ -41,6 +41,36 @@ export interface SchemaData {
   functions: SchemaRoutine[];
 }
 
+export interface DatabaseSummary {
+  tableCount: number;
+  viewCount: number;
+  procedureCount: number;
+  functionCount: number;
+  totalColumnCount: number;
+  tablesWithPK: number;
+  foreignKeyCount: number;
+  totalSizeGB: number;
+  dataSizeGB: number;
+  indexSizeGB: number;
+  largestTableName: string | null;
+  totalRows: number;
+  totalIndexes: number;
+  disabledIndexes: number;
+  tablesWithMissingIndexes: number;
+  missingIndexCount: number;
+  totalSeeks: number;
+  totalScans: number;
+  totalLookups: number;
+  totalUpdates: number;
+  unusedIndexCount: number;
+  serverName: string;
+  databaseName: string;
+  sqlVersion: string;
+  edition: string;
+  serverStartTime: string;
+  uptimeMinutes: number;
+}
+
 export interface QueryResult {
   columns: { name: string; dataType: string }[];
   rows: Record<string, unknown>[];

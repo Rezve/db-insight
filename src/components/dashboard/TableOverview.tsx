@@ -41,14 +41,11 @@ export default function TableOverview({ baseTables, views }: TableOverviewProps)
   return (
     <div>
       <div className="flex items-start justify-between mb-6">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Database Overview</h1>
-          <p className="text-muted-foreground text-sm mt-1">
-            {isSearching
-              ? `Showing ${filteredTables.length} of ${baseTables.length} tables, ${filteredViews.length} of ${views.length} views`
-              : `${baseTables.length} tables, ${views.length} views — click any to start analysis`}
-          </p>
-        </div>
+        <p className="text-muted-foreground text-sm self-center">
+          {isSearching
+            ? `Showing ${filteredTables.length} of ${baseTables.length} tables, ${filteredViews.length} of ${views.length} views`
+            : `${baseTables.length} tables, ${views.length} views — click any to start analysis`}
+        </p>
         <div className="flex items-center gap-2">
           <div className="relative">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
