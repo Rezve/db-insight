@@ -1,5 +1,6 @@
 "use client";
 
+import { useSearchParams, useRouter } from "next/navigation";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { BarChart2, Table2 } from "lucide-react";
 import TableOverview from "@/components/dashboard/TableOverview";
@@ -12,8 +13,16 @@ interface OverviewTabsProps {
 }
 
 export default function OverviewTabs({ baseTables, views }: OverviewTabsProps) {
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const activeTab = searchParams.get("tab") ?? "summary";
+
+  function handleTabChange(value: string) {
+    router.replace(`/dashboard?tab=${value}`, { scroll: false });
+  }
+
   return (
-    <Tabs defaultValue="summary" className="space-y-4">
+    <Tabs value={activeTab} onValueChange={handleTabChange} className="space-y-4">
       <TabsList>
         <TabsTrigger value="summary" className="flex items-center gap-1.5">
           <BarChart2 className="h-4 w-4" />

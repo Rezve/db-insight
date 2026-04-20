@@ -66,7 +66,7 @@ export default function TableAnalysisPage({ params }: PageProps) {
       {/* Header */}
       <div>
         <Link
-          href="/dashboard"
+          href="/dashboard?tab=tables"
           className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground mb-2"
         >
           <ArrowLeft className="h-4 w-4" />
