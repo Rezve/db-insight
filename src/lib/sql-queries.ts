@@ -56,6 +56,45 @@ WHERE ROUTINE_TYPE IN ('PROCEDURE', 'FUNCTION')
 ORDER BY ROUTINE_SCHEMA, ROUTINE_NAME
 `;
 
+export const SQL_SCHEMA_FOREIGN_KEYS = `
+SELECT
+    src_s.name  AS [sourceSchema],
+    src_t.name  AS [sourceTable],
+    src_c.name  AS [sourceColumn],
+    tgt_s.name  AS [targetSchema],
+    tgt_t.name  AS [targetTable],
+    tgt_c.name  AS [targetColumn]
+FROM sys.foreign_keys fk
+INNER JOIN sys.foreign_key_columns fkc ON fk.object_id = fkc.constraint_object_id
+INNER JOIN sys.tables  src_t ON fkc.parent_object_id     = src_t.object_id
+INNER JOIN sys.schemas src_s ON src_t.schema_id          = src_s.schema_id
+INNER JOIN sys.columns src_c ON fkc.parent_object_id     = src_c.object_id
+                             AND fkc.parent_column_id    = src_c.column_id
+INNER JOIN sys.tables  tgt_t ON fkc.referenced_object_id = tgt_t.object_id
+INNER JOIN sys.schemas tgt_s ON tgt_t.schema_id          = tgt_s.schema_id
+INNER JOIN sys.columns tgt_c ON fkc.referenced_object_id = tgt_c.object_id
+                             AND fkc.referenced_column_id = tgt_c.column_id
+`;
+
+export const SQL_SCHEMA_PARAMETERS = `
+SELECT
+    s.name                                            AS [schema],
+    o.name                                            AS [routineName],
+    p.name                                            AS [paramName],
+    t.name                                            AS [dataType],
+    CAST(p.max_length AS INT)                         AS [maxLength],
+    CAST(p.is_output        AS BIT)                   AS [isOutput],
+    CAST(p.has_default_value AS BIT)                  AS [hasDefault],
+    p.parameter_id                                    AS [parameterId]
+FROM sys.parameters p
+INNER JOIN sys.objects o ON p.object_id = o.object_id
+INNER JOIN sys.schemas s ON o.schema_id = s.schema_id
+INNER JOIN sys.types   t ON p.user_type_id = t.user_type_id
+WHERE o.type IN ('P', 'FN', 'IF', 'TF')
+  AND p.name <> ''
+ORDER BY s.name, o.name, p.parameter_id
+`;
+
 export const SQL_ROW_COUNT_FAST = `
 SELECT
     ISNULL(SUM(p.rows), 0) AS [rowCount]

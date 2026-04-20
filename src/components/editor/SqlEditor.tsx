@@ -17,7 +17,14 @@ import QueryPlanVisualizer from "./QueryPlanVisualizer";
 import QueryPlanText from "./QueryPlanText";
 import CompareView from "./CompareView";
 import QueryPickerModal from "./QueryPickerModal";
-import type { SchemaData } from "@/types/db";
+import type { SchemaData, SchemaTable, SchemaRoutine, ColumnInfo } from "@/types/db";
+import {
+  buildSchemaIndex,
+  analyzeQueryAt,
+  collectDiagnostics,
+  resolveQualifier,
+  type SchemaIndex,
+} from "@/lib/sql-intellisense";
 
 // Monaco must not be SSR'd
 const MonacoEditor = dynamic(() => import("@monaco-editor/react"), { ssr: false });
@@ -104,6 +111,9 @@ export default function SqlEditor({
   const abortRef = useRef<AbortController | null>(null);
   const monacoRef = useRef<typeof import("monaco-editor") | null>(null);
   const schemaRef = useRef<SchemaData | null>(null);
+  const schemaIndexRef = useRef<SchemaIndex | null>(null);
+  const providersRegisteredRef = useRef(false);
+  const diagTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const dragState = useRef<{ startY: number; startHeight: number } | null>(null);
   const prevTabId = useRef(tabId);
@@ -121,9 +131,46 @@ export default function SqlEditor({
       .then((r) => r.json())
       .then((data: SchemaData) => {
         schemaRef.current = data;
+        schemaIndexRef.current = buildSchemaIndex(data);
+        runDiagnostics();
       })
       .catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const runDiagnostics = useCallback(() => {
+    const editorInstance = editorRef.current;
+    const monacoInstance = monacoRef.current;
+    const index = schemaIndexRef.current;
+    if (!editorInstance || !monacoInstance) return;
+    const model = editorInstance.getModel();
+    if (!model) return;
+    if (!index) {
+      monacoInstance.editor.setModelMarkers(model, "sql-intellisense", []);
+      return;
+    }
+    const text = model.getValue();
+    const diags = collectDiagnostics(text, index);
+    const markers = diags.map((d) => {
+      const startPos = model.getPositionAt(d.start);
+      const endPos = model.getPositionAt(d.end);
+      return {
+        severity: monacoInstance.MarkerSeverity.Error,
+        message: d.message,
+        startLineNumber: startPos.lineNumber,
+        startColumn: startPos.column,
+        endLineNumber: endPos.lineNumber,
+        endColumn: endPos.column,
+        source: "sql-intellisense",
+      };
+    });
+    monacoInstance.editor.setModelMarkers(model, "sql-intellisense", markers);
+  }, []);
+
+  const scheduleDiagnostics = useCallback(() => {
+    if (diagTimerRef.current) clearTimeout(diagTimerRef.current);
+    diagTimerRef.current = setTimeout(runDiagnostics, 250);
+  }, [runDiagnostics]);
 
   // Sync Monaco content when switching tabs
   useEffect(() => {
@@ -143,13 +190,30 @@ export default function SqlEditor({
     return () => clearInterval(id);
   }, [running]);
 
-  const registerCompletionProvider = useCallback(
+  const registerProviders = useCallback(
     (monacoInstance: typeof import("monaco-editor")) => {
+      if (providersRegisteredRef.current) return;
+      providersRegisteredRef.current = true;
+
+      const TOP_LEVEL_KEYWORDS = [
+        "SELECT", "INSERT", "UPDATE", "DELETE", "EXEC", "EXECUTE", "WITH",
+        "DECLARE", "IF", "BEGIN", "CREATE", "ALTER", "DROP", "USE", "TRUNCATE",
+      ];
+      const CLAUSE_KEYWORDS = [
+        "AND", "OR", "NOT", "IN", "LIKE", "BETWEEN", "IS NULL", "IS NOT NULL",
+        "CASE", "WHEN", "THEN", "ELSE", "END", "CAST", "CONVERT", "ISNULL",
+        "COALESCE", "COUNT", "SUM", "AVG", "MIN", "MAX", "DISTINCT",
+      ];
+
       monacoInstance.languages.registerCompletionItemProvider("sql", {
-        triggerCharacters: [" ", ".", "("],
+        triggerCharacters: [" ", ".", "(", ","],
         provideCompletionItems: (model, position) => {
-          const schema = schemaRef.current;
-          if (!schema?.tables) return { suggestions: [] };
+          const index = schemaIndexRef.current;
+          if (!index) return { suggestions: [] };
+
+          const offset = model.getOffsetAt(position);
+          const text = model.getValue();
+          const ctx = analyzeQueryAt(text, offset, index);
 
           const word = model.getWordUntilPosition(position);
           const range: IRange = {
@@ -159,59 +223,192 @@ export default function SqlEditor({
             endColumn: word.endColumn,
           };
 
+          const Kind = monacoInstance.languages.CompletionItemKind;
+          const snippetRules = monacoInstance.languages.CompletionItemInsertTextRule.InsertAsSnippet;
           const suggestions: languages.CompletionItem[] = [];
 
-          // SQL keywords
-          const keywords = [
-            "SELECT", "FROM", "WHERE", "JOIN", "LEFT JOIN", "RIGHT JOIN", "INNER JOIN",
-            "OUTER JOIN", "ON", "GROUP BY", "ORDER BY", "HAVING", "INSERT INTO", "UPDATE",
-            "DELETE FROM", "SET", "VALUES", "AS", "DISTINCT", "TOP", "WITH", "NOLOCK",
-            "COUNT", "SUM", "AVG", "MIN", "MAX", "CAST", "CONVERT", "ISNULL", "COALESCE",
-            "AND", "OR", "NOT", "IN", "LIKE", "BETWEEN", "IS NULL", "IS NOT NULL",
-          ];
-          for (const kw of keywords) {
+          const pushColumn = (col: ColumnInfo, table: SchemaTable, prefix = "", sortBoost = "00") => {
+            const nullable = col.isNullable ? "NULL" : "NOT NULL";
+            const fk = col.foreignKey
+              ? ` · FK → ${col.foreignKey.targetSchema}.${col.foreignKey.targetTable}.${col.foreignKey.targetColumn}`
+              : "";
+            suggestions.push({
+              label: prefix ? `${prefix}${col.name}` : col.name,
+              kind: Kind.Field,
+              insertText: `[${col.name}]`,
+              detail: `${col.dataType}${col.maxLength ? `(${col.maxLength})` : ""} · ${nullable}${fk} · ${table.schema}.${table.name}`,
+              filterText: (prefix + col.name).toLowerCase(),
+              sortText: `${sortBoost}${col.name}`,
+              range,
+            });
+          };
+
+          const pushTable = (table: SchemaTable, sortBoost = "10") => {
+            suggestions.push({
+              label: `${table.schema}.${table.name}`,
+              kind: Kind.Class,
+              insertText: `[${table.schema}].[${table.name}]`,
+              detail: `Table · ${table.columns.length} columns`,
+              filterText: `${table.schema}.${table.name} ${table.name}`.toLowerCase(),
+              sortText: `${sortBoost}${table.name}`,
+              range,
+            });
+          };
+
+          const pushProcedure = (sp: SchemaRoutine, sortBoost = "10") => {
+            suggestions.push({
+              label: `${sp.schema}.${sp.name}`,
+              kind: Kind.Module,
+              insertText: `[${sp.schema}].[${sp.name}]`,
+              detail: `Stored Procedure${sp.parameters?.length ? ` · ${sp.parameters.length} params` : ""}`,
+              filterText: `${sp.schema}.${sp.name} ${sp.name}`.toLowerCase(),
+              sortText: `${sortBoost}${sp.name}`,
+              range,
+            });
+          };
+
+          const pushKeyword = (kw: string, sortBoost = "50") => {
             suggestions.push({
               label: kw,
-              kind: monacoInstance.languages.CompletionItemKind.Keyword,
+              kind: Kind.Keyword,
               insertText: kw,
+              sortText: `${sortBoost}${kw}`,
               range,
             });
+          };
+
+          // Dot-qualified context: show only what's relevant.
+          if (ctx.dotQualifier) {
+            const res = resolveQualifier(ctx.dotQualifier, ctx.fromTables, index);
+            if (res?.kind === "table") {
+              for (const col of res.table.columns) pushColumn(col, res.table);
+              return { suggestions };
+            }
+            if (res?.kind === "schema") {
+              for (const t of index.allTables) {
+                if (t.schema.toLowerCase() === res.schema) pushTable(t, "00");
+              }
+              return { suggestions };
+            }
+            return { suggestions: [] };
           }
 
-          // Tables
-          for (const table of schema.tables) {
-            suggestions.push({
-              label: table.name,
-              kind: monacoInstance.languages.CompletionItemKind.Class,
-              insertText: `[${table.schema}].[${table.name}]`,
-              detail: `Table · schema: ${table.schema}`,
-              documentation: `${table.columns.length} columns`,
-              range,
-            });
-            // Columns for each table
-            for (const col of table.columns) {
-              suggestions.push({
-                label: `${table.name}.${col.name}`,
-                kind: monacoInstance.languages.CompletionItemKind.Field,
-                insertText: `[${col.name}]`,
-                detail: `${col.dataType} | ${table.name}`,
-                range,
-              });
+          switch (ctx.clause) {
+            case "from":
+            case "join":
+            case "update":
+            case "into":
+              for (const t of index.allTables) pushTable(t);
+              // FK-aware JOIN snippets
+              if (ctx.clause === "join" && ctx.fromTables.length > 0) {
+                for (const ft of ctx.fromTables) {
+                  if (!ft.known) continue;
+                  const sourceAlias = ft.alias ?? ft.table.name;
+                  for (const col of ft.table.columns) {
+                    if (!col.foreignKey) continue;
+                    const fk = col.foreignKey;
+                    const targetAlias = fk.targetTable[0]?.toLowerCase() ?? "t";
+                    const label = `JOIN ${fk.targetSchema}.${fk.targetTable} ${targetAlias} ON ${targetAlias}.${fk.targetColumn} = ${sourceAlias}.${col.name}`;
+                    suggestions.push({
+                      label,
+                      kind: Kind.Snippet,
+                      insertText:
+                        `[${fk.targetSchema}].[${fk.targetTable}] \${1:${targetAlias}} ON \${1:${targetAlias}}.[${fk.targetColumn}] = ${sourceAlias}.[${col.name}]`,
+                      insertTextRules: snippetRules,
+                      detail: `Foreign key join from ${ft.table.schema}.${ft.table.name}.${col.name}`,
+                      filterText: `join ${fk.targetTable}`.toLowerCase(),
+                      sortText: `00${label}`,
+                      range,
+                    });
+                  }
+                }
+              }
+              break;
+            case "exec":
+              for (const sp of index.allProcedures) pushProcedure(sp);
+              break;
+            case "select":
+            case "where":
+            case "on":
+            case "groupby":
+            case "orderby":
+            case "having":
+            case "set": {
+              // In-scope columns first.
+              const ambiguous = new Map<string, number>();
+              for (const ft of ctx.fromTables) {
+                if (!ft.known) continue;
+                for (const c of ft.table.columns) {
+                  const key = c.name.toLowerCase();
+                  ambiguous.set(key, (ambiguous.get(key) ?? 0) + 1);
+                }
+              }
+              for (const ft of ctx.fromTables) {
+                if (!ft.known) continue;
+                const qualifier = ft.alias ?? ft.table.name;
+                for (const c of ft.table.columns) {
+                  const prefix = (ambiguous.get(c.name.toLowerCase()) ?? 0) > 1 ? `${qualifier}.` : "";
+                  pushColumn(c, ft.table, prefix, "00");
+                }
+              }
+              // Aliases themselves as completions (for `o.` typing pattern).
+              for (const ft of ctx.fromTables) {
+                if (!ft.known || !ft.alias) continue;
+                suggestions.push({
+                  label: ft.alias,
+                  kind: Kind.Variable,
+                  insertText: ft.alias,
+                  detail: `Alias of ${ft.table.schema}.${ft.table.name}`,
+                  sortText: `01${ft.alias}`,
+                  range,
+                });
+              }
+              for (const kw of CLAUSE_KEYWORDS) pushKeyword(kw, "50");
+              break;
+            }
+            default: {
+              for (const kw of TOP_LEVEL_KEYWORDS) pushKeyword(kw, "10");
+              break;
             }
           }
 
-          // Stored procedures
-          for (const sp of schema.storedProcedures) {
-            suggestions.push({
-              label: sp.name,
-              kind: monacoInstance.languages.CompletionItemKind.Module,
-              insertText: `[${sp.schema}].[${sp.name}]`,
-              detail: "Stored Procedure",
-              range,
-            });
-          }
-
           return { suggestions };
+        },
+      });
+
+      monacoInstance.languages.registerSignatureHelpProvider("sql", {
+        signatureHelpTriggerCharacters: ["(", ","],
+        signatureHelpRetriggerCharacters: [","],
+        provideSignatureHelp: (model, position) => {
+          const index = schemaIndexRef.current;
+          if (!index) return null;
+          const offset = model.getOffsetAt(position);
+          const ctx = analyzeQueryAt(model.getValue(), offset, index);
+          if (!ctx.execProcedureKey) return null;
+          const sp = index.proceduresByKey.get(ctx.execProcedureKey);
+          if (!sp || !sp.parameters || sp.parameters.length === 0) return null;
+
+          const paramLabels = sp.parameters.map((p) => {
+            const len = p.maxLength && p.maxLength > 0 ? `(${p.maxLength})` : "";
+            const out = p.isOutput ? " OUTPUT" : "";
+            const def = p.hasDefault ? " = default" : "";
+            return `${p.name} ${p.dataType}${len}${out}${def}`;
+          });
+          const label = `${sp.schema}.${sp.name}(${paramLabels.join(", ")})`;
+
+          return {
+            value: {
+              signatures: [
+                {
+                  label,
+                  parameters: paramLabels.map((p) => ({ label: p })),
+                },
+              ],
+              activeSignature: 0,
+              activeParameter: Math.min(ctx.execArgIndex ?? 0, sp.parameters.length - 1),
+            },
+            dispose: () => {},
+          };
         },
       });
     },
@@ -224,7 +421,14 @@ export default function SqlEditor({
   ) {
     editorRef.current = editorInstance;
     monacoRef.current = monacoInstance;
-    registerCompletionProvider(monacoInstance);
+    registerProviders(monacoInstance);
+
+    // Debounced diagnostics on every content change.
+    const model = editorInstance.getModel();
+    if (model) {
+      model.onDidChangeContent(scheduleDiagnostics);
+      runDiagnostics();
+    }
 
     // Track whether the user has an active text selection
     editorInstance.onDidChangeCursorSelection((e) => {

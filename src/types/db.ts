@@ -21,6 +21,11 @@ export interface ColumnInfo {
   dataType: string;
   isNullable: boolean;
   maxLength: number | null;
+  foreignKey?: {
+    targetSchema: string;
+    targetTable: string;
+    targetColumn: string;
+  };
 }
 
 export interface SchemaTable {
@@ -29,10 +34,19 @@ export interface SchemaTable {
   columns: ColumnInfo[];
 }
 
+export interface RoutineParameter {
+  name: string;
+  dataType: string;
+  maxLength: number | null;
+  isOutput: boolean;
+  hasDefault: boolean;
+}
+
 export interface SchemaRoutine {
   schema: string;
   name: string;
   type: "PROCEDURE" | "FUNCTION";
+  parameters?: RoutineParameter[];
 }
 
 export interface SchemaData {
