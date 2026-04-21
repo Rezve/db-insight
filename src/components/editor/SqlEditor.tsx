@@ -117,6 +117,7 @@ export default function SqlEditor({
   const containerRef = useRef<HTMLDivElement | null>(null);
   const dragState = useRef<{ startY: number; startHeight: number } | null>(null);
   const prevTabId = useRef(tabId);
+  const runQueryRef = useRef<(queryText?: string) => Promise<void>>(async () => {});
   const [hasSelection, setHasSelection] = useState(false);
   const [editorHeightPx, setEditorHeightPx] = useState(260);
   const queryStartRef = useRef<number | null>(null);
@@ -441,7 +442,29 @@ export default function SqlEditor({
     // Ctrl+Enter to run (selected text if any, otherwise full query)
     editorInstance.addCommand(
       monacoInstance.KeyMod.CtrlCmd | monacoInstance.KeyCode.Enter,
-      () => runQuery()
+      () => runQueryRef.current()
+    );
+
+    // Ctrl+D to duplicate the current line (or each line of a multi-line selection)
+    editorInstance.addCommand(
+      monacoInstance.KeyMod.CtrlCmd | monacoInstance.KeyCode.KeyD,
+      () => {
+        const model = editorInstance.getModel();
+        const sel = editorInstance.getSelection();
+        if (!model || !sel) return;
+        const startLine = sel.startLineNumber;
+        const endLine = sel.endLineNumber;
+        const eol = model.getEOL();
+        const edits = [];
+        for (let line = startLine; line <= endLine; line++) {
+          const col = model.getLineMaxColumn(line);
+          edits.push({
+            range: new monacoInstance.Range(line, col, line, col),
+            text: eol + model.getLineContent(line),
+          });
+        }
+        editorInstance.executeEdits("duplicate-line", edits);
+      }
     );
 
     // Alt+Shift+F to format
@@ -687,6 +710,9 @@ export default function SqlEditor({
       onRunningChange(false);
     }
   }
+
+  // Keep the ref pointing to the latest runQuery so the Monaco command doesn't stale-close.
+  runQueryRef.current = runQuery;
 
   function cancelQuery() {
     abortRef.current?.abort();
