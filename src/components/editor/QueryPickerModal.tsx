@@ -13,18 +13,18 @@ interface QueryPickerModalProps {
 }
 
 export default function QueryPickerModal({ open, queries, defaultIndex, onSelect, onClose }: QueryPickerModalProps) {
-  const [selectedIndex, setSelectedIndex] = useState(defaultIndex);
+  const [selectedIndex, setSelectedIndex] = useState(0);
   const itemRefs = useRef<(HTMLButtonElement | null)[]>([]);
 
-  // Reset to cursor-inferred default each time the modal opens
-  useEffect(() => {
-    if (open) setSelectedIndex(defaultIndex);
-  }, [open, defaultIndex]);
+  const displayOrder = [
+    defaultIndex,
+    ...queries.map((_, i) => i).filter(i => i !== defaultIndex),
+  ];
 
-  // Scroll selected item into view whenever it changes (covers open + keyboard nav)
+  // Reset to top (cursor item) each time the modal opens
   useEffect(() => {
-    itemRefs.current[selectedIndex]?.scrollIntoView({ block: "nearest" });
-  }, [selectedIndex]);
+    if (open) setSelectedIndex(0);
+  }, [open, defaultIndex]);
 
   useEffect(() => {
     if (!open) return;
@@ -40,13 +40,13 @@ export default function QueryPickerModal({ open, queries, defaultIndex, onSelect
       }
       if (e.key === "Enter") {
         e.preventDefault();
-        onSelect(queries[selectedIndex]);
+        onSelect(queries[displayOrder[selectedIndex]]);
         onClose();
       }
     }
     window.addEventListener("keydown", handleKey);
     return () => window.removeEventListener("keydown", handleKey);
-  }, [open, onClose, onSelect, queries, selectedIndex]);
+  }, [open, onClose, onSelect, queries, selectedIndex, displayOrder]);
 
   if (!open) return null;
 
@@ -63,15 +63,16 @@ export default function QueryPickerModal({ open, queries, defaultIndex, onSelect
           </Button>
         </div>
         <div className="overflow-y-auto flex-1 p-2 space-y-1">
-          {queries.map((query, i) => {
-            const isSelected = i === selectedIndex;
-            const isCursorDefault = i === defaultIndex;
+          {displayOrder.map((origIdx, displayIdx) => {
+            const query = queries[origIdx];
+            const isSelected = displayIdx === selectedIndex;
+            const isCursorDefault = origIdx === defaultIndex;
             return (
               <button
-                key={i}
-                ref={el => { itemRefs.current[i] = el; }}
+                key={origIdx}
+                ref={el => { itemRefs.current[displayIdx] = el; }}
                 onClick={() => { onSelect(query); onClose(); }}
-                onMouseEnter={() => setSelectedIndex(i)}
+                onMouseEnter={() => setSelectedIndex(displayIdx)}
                 className={[
                   "w-full text-left px-3 py-2 rounded-md border transition-colors",
                   isSelected
@@ -80,7 +81,7 @@ export default function QueryPickerModal({ open, queries, defaultIndex, onSelect
                 ].join(" ")}
               >
                 <div className="text-[10px] text-muted-foreground mb-1 font-medium flex items-center gap-1.5">
-                  Query {i + 1}
+                  Query {origIdx + 1}
                   {isCursorDefault && (
                     <span className="text-[9px] bg-primary text-primary-foreground rounded px-1 py-0 leading-4">
                       cursor
