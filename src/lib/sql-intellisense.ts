@@ -271,6 +271,7 @@ export type Clause =
   | "exec"
   | "into"
   | "update"
+  | "insert_columns"
   | "unknown";
 
 export interface FromTable {
@@ -289,6 +290,9 @@ export interface QueryContext {
   // For signature help.
   execProcedureKey?: string;
   execArgIndex?: number;
+  // Populated when clause === "insert_columns".
+  insertTable?: SchemaTable;
+  insertedColumns?: string[];
 }
 
 // Returns the indices of tokens bounding the current statement [startIdx, endIdx).
@@ -397,6 +401,64 @@ function parseFromTables(tokens: SqlToken[], start: number, end: number, index: 
   return out;
 }
 
+// Detects whether the caret is inside an INSERT INTO tbl (col1, col2, ...) column list.
+// Returns { insertTable, insertedColumns } or null if not in that context.
+function parseInsertContext(
+  tokens: SqlToken[],
+  stmtStart: number,
+  caretIdx: number,
+  index: SchemaIndex
+): { insertTable: SchemaTable | undefined; insertedColumns: string[] } | null {
+  // Walk backwards looking for an unmatched opening paren.
+  let parenDepth = 0;
+  let openParenIdx = -1;
+  for (let i = caretIdx - 1; i >= stmtStart; i--) {
+    const t = tokens[i];
+    if (t.kind === "rparen") { parenDepth++; continue; }
+    if (t.kind === "lparen") {
+      if (parenDepth > 0) { parenDepth--; continue; }
+      openParenIdx = i;
+      break;
+    }
+    // Hit VALUES or INSERT at depth 0 — not inside a column list paren.
+    if (parenDepth === 0 && t.kind === "keyword" &&
+        (t.value === "VALUES" || t.value === "INSERT")) return null;
+  }
+  if (openParenIdx === -1) return null;
+
+  // Confirm the opening paren is preceded by: identifier [dot identifier] INTO INSERT
+  let j = openParenIdx - 1;
+  if (tokens[j]?.kind !== "identifier") return null;
+  const tableName = tokens[j].value; j--;
+  let schemaName: string | undefined;
+  if (tokens[j]?.kind === "dot" && tokens[j - 1]?.kind === "identifier") {
+    j--; // skip dot
+    schemaName = tokens[j].value; j--;
+  }
+  if (tokens[j]?.kind !== "keyword" || tokens[j].value !== "INTO") return null; j--;
+  if (tokens[j]?.kind !== "keyword" || tokens[j].value !== "INSERT") return null;
+
+  // Resolve the table in the schema index.
+  const key = schemaName
+    ? `${schemaName.toLowerCase()}.${tableName.toLowerCase()}`
+    : tableName.toLowerCase();
+  const insertTable = index.tablesByKey.get(key);
+
+  // Collect identifiers already typed between the opening paren and the current word start.
+  const caretWordStart = tokens[caretIdx - 1]?.kind === "identifier"
+    ? tokens[caretIdx - 1].start
+    : caretIdx;
+  const insertedColumns: string[] = [];
+  for (let k = openParenIdx + 1; k < tokens.length; k++) {
+    if (tokens[k].start >= caretWordStart) break;
+    if (tokens[k].kind === "identifier") {
+      insertedColumns.push(tokens[k].value.toLowerCase());
+    }
+  }
+
+  return { insertTable, insertedColumns };
+}
+
 // Walk backwards from caret position and find the most recent clause keyword.
 function detectClause(tokens: SqlToken[], stmtStart: number, caretIdx: number): Clause {
   // We iterate backwards ignoring comments. When we hit a clause keyword, we stop.
@@ -481,7 +543,17 @@ export function analyzeQueryAt(sql: string, offset: number, index: SchemaIndex):
   }
 
   const fromTables = parseFromTables(tokens, start, end, index);
-  const clause = detectClause(tokens, start, caretIdx);
+  let clause = detectClause(tokens, start, caretIdx);
+
+  // INSERT column list detection overrides the clause when applicable.
+  let insertTable: SchemaTable | undefined;
+  let insertedColumns: string[] | undefined;
+  const insertCtx = parseInsertContext(tokens, start, caretIdx, index);
+  if (insertCtx !== null) {
+    clause = "insert_columns";
+    insertTable = insertCtx.insertTable;
+    insertedColumns = insertCtx.insertedColumns;
+  }
 
   // EXEC context — procedure key + active argument index.
   let execProcedureKey: string | undefined;
@@ -535,6 +607,8 @@ export function analyzeQueryAt(sql: string, offset: number, index: SchemaIndex):
     currentWord: { text: wordText, start: wordStart, end: wordEnd },
     execProcedureKey,
     execArgIndex,
+    insertTable,
+    insertedColumns,
   };
 }
 

@@ -295,11 +295,47 @@ export default function SqlEditor({
           }
 
           switch (ctx.clause) {
+            case "insert_columns": {
+              if (ctx.insertTable) {
+                const excluded = new Set(ctx.insertedColumns ?? []);
+                for (const col of ctx.insertTable.columns) {
+                  if (!excluded.has(col.name.toLowerCase())) {
+                    pushColumn(col, ctx.insertTable, "", "00");
+                  }
+                }
+              }
+              break;
+            }
             case "from":
             case "join":
             case "update":
             case "into":
               for (const t of index.allTables) pushTable(t);
+              // "All columns" INSERT snippet when cursor is right after the table name.
+              if (ctx.clause === "into") {
+                const textBefore = model.getValueInRange({
+                  startLineNumber: 1, startColumn: 1,
+                  endLineNumber: position.lineNumber, endColumn: position.column,
+                });
+                const intoMatch = /INSERT\s+INTO\s+(?:\[?\w+\]?\.\s*)?\[?(\w+)\]?\s*$/i.exec(textBefore);
+                if (intoMatch) {
+                  const tbl = index.tablesByKey.get(intoMatch[1].toLowerCase());
+                  if (tbl) {
+                    const colList = tbl.columns.map(c => `[${c.name}]`).join(", ");
+                    const valPlaceholders = tbl.columns.map((c, idx) => `\${${idx + 1}:${c.name}}`).join(", ");
+                    suggestions.push({
+                      label: `INSERT all columns — ${tbl.name}`,
+                      kind: Kind.Snippet,
+                      insertText: `(${colList})\nVALUES (${valPlaceholders})`,
+                      insertTextRules: snippetRules,
+                      detail: `Expand full column list + VALUES for ${tbl.schema}.${tbl.name}`,
+                      filterText: `insert all columns ${tbl.name}`.toLowerCase(),
+                      sortText: `00INSERT_ALL`,
+                      range,
+                    });
+                  }
+                }
+              }
               // FK-aware JOIN snippets
               if (ctx.clause === "join" && ctx.fromTables.length > 0) {
                 for (const ft of ctx.fromTables) {
@@ -427,7 +463,22 @@ export default function SqlEditor({
     // Debounced diagnostics on every content change.
     const model = editorInstance.getModel();
     if (model) {
-      model.onDidChangeContent(scheduleDiagnostics);
+      model.onDidChangeContent((e) => {
+        scheduleDiagnostics();
+        // When ( is typed (possibly auto-closed to ()), Monaco suppresses the suggest
+        // widget for bracket completion. Re-trigger it if we're in an INSERT column list.
+        const hasOpenParen = e.changes.some((c) => c.text.startsWith("("));
+        if (hasOpenParen && schemaIndexRef.current) {
+          const pos = editorInstance.getPosition();
+          if (pos) {
+            const offset = model.getOffsetAt(pos);
+            const ctx = analyzeQueryAt(model.getValue(), offset, schemaIndexRef.current);
+            if (ctx.clause === "insert_columns") {
+              setTimeout(() => editorInstance.trigger("", "editor.action.triggerSuggest", {}), 0);
+            }
+          }
+        }
+      });
       runDiagnostics();
     }
 
