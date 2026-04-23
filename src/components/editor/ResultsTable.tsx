@@ -1,6 +1,12 @@
 "use client";
 
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { AlertCircle } from "lucide-react";
 
 interface Column {
@@ -20,6 +26,24 @@ interface ResultsTableProps {
     rowsAffected?: number[];
   } | null;
   loading: boolean;
+}
+
+function ColHeader({ col }: { col: Column }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <th className="text-left px-3 py-2 font-medium text-xs text-muted-foreground whitespace-nowrap border-r last:border-r-0 cursor-default">
+          {col.name}
+        </th>
+      </TooltipTrigger>
+      <TooltipContent>
+        <span>
+          <b>{col.name}</b>
+          {col.dataType !== "unknown" && <>: {col.dataType}</>}
+        </span>
+      </TooltipContent>
+    </Tooltip>
+  );
 }
 
 export default function ResultsTable({ result, loading }: ResultsTableProps) {
@@ -59,11 +83,32 @@ export default function ResultsTable({ result, loading }: ResultsTableProps) {
   }
 
   if (result.rows.length === 0) {
+    if (result.columns.length > 0) {
+      return (
+        <div className="overflow-auto h-full">
+          <TooltipProvider>
+            <table className="w-full text-sm border-collapse">
+              <thead className="sticky top-0 bg-zinc-50 dark:bg-zinc-900 border-b">
+                <tr>
+                  {result.columns.map((col) => (
+                    <ColHeader key={col.name} col={col} />
+                  ))}
+                </tr>
+              </thead>
+              <tbody />
+            </table>
+          </TooltipProvider>
+          <div className="flex items-center justify-center p-6 text-muted-foreground text-sm">
+            No rows returned
+          </div>
+        </div>
+      );
+    }
     const affected = result.rowsAffected?.reduce((a, b) => a + b, 0) ?? 0;
     const message =
       affected > 0
         ? `${affected} row${affected === 1 ? "" : "s"} affected`
-        : "Query executed successfully — no rows returned";
+        : "Query executed successfully";
     return (
       <div className="flex items-center justify-center h-full text-muted-foreground text-sm p-8">
         {message}
@@ -78,55 +123,48 @@ export default function ResultsTable({ result, loading }: ResultsTableProps) {
           Results limited to 1,000 rows. Total rows affected: {result.rowCount}
         </div>
       )}
-      <table className="w-full text-sm border-collapse">
-        <thead className="sticky top-0 bg-zinc-50 dark:bg-zinc-900 border-b">
-          <tr>
-            {result.columns.map((col) => (
-              <th
-                key={col.name}
-                className="text-left px-3 py-2 font-medium text-xs text-muted-foreground whitespace-nowrap border-r last:border-r-0"
-                title={col.dataType}
-              >
-                {col.name}
-                {col.dataType !== "unknown" && (
-                  <span className="ml-1 text-[10px] opacity-60">{col.dataType}</span>
-                )}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {result.rows.map((row, rowIdx) => (
-            <tr
-              key={rowIdx}
-              className="border-b hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors"
-            >
-              {result.columns.map((col) => {
-                const val = row[col.name];
-                const display =
-                  val === null || val === undefined
-                    ? null
-                    : val instanceof Date
-                    ? val.toISOString()
-                    : String(val);
-                return (
-                  <td
-                    key={col.name}
-                    className="px-3 py-1.5 font-mono text-xs border-r last:border-r-0 max-w-[300px] truncate"
-                    title={display ?? ""}
-                  >
-                    {display === null ? (
-                      <span className="text-muted-foreground italic">NULL</span>
-                    ) : (
-                      display
-                    )}
-                  </td>
-                );
-              })}
+      <TooltipProvider>
+        <table className="w-full text-sm border-collapse">
+          <thead className="sticky top-0 bg-zinc-50 dark:bg-zinc-900 border-b">
+            <tr>
+              {result.columns.map((col) => (
+                <ColHeader key={col.name} col={col} />
+              ))}
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {result.rows.map((row, rowIdx) => (
+              <tr
+                key={rowIdx}
+                className="border-b hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors"
+              >
+                {result.columns.map((col) => {
+                  const val = row[col.name];
+                  const display =
+                    val === null || val === undefined
+                      ? null
+                      : val instanceof Date
+                      ? val.toISOString()
+                      : String(val);
+                  return (
+                    <td
+                      key={col.name}
+                      className="px-3 py-1.5 font-mono text-xs border-r last:border-r-0 max-w-[300px] truncate"
+                      title={display ?? ""}
+                    >
+                      {display === null ? (
+                        <span className="text-muted-foreground italic">NULL</span>
+                      ) : (
+                        display
+                      )}
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </TooltipProvider>
     </div>
   );
 }
