@@ -66,7 +66,6 @@ export default function QueryPickerModal({ open, queries, defaultIndex, onSelect
           {displayOrder.map((origIdx, displayIdx) => {
             const query = queries[origIdx];
             const isSelected = displayIdx === selectedIndex;
-            const isCursorDefault = origIdx === defaultIndex;
             return (
               <button
                 key={origIdx}
@@ -80,14 +79,6 @@ export default function QueryPickerModal({ open, queries, defaultIndex, onSelect
                     : "hover:bg-accent hover:border-accent-foreground/20",
                 ].join(" ")}
               >
-                <div className="text-[10px] text-muted-foreground mb-1 font-medium flex items-center gap-1.5">
-                  Query {origIdx + 1}
-                  {isCursorDefault && (
-                    <span className="text-[9px] bg-primary text-primary-foreground rounded px-1 py-0 leading-4">
-                      cursor
-                    </span>
-                  )}
-                </div>
                 <pre className="font-mono text-xs text-foreground whitespace-pre-wrap break-all line-clamp-3">
                   {query.length > 300 ? query.slice(0, 300) + "…" : query}
                 </pre>
