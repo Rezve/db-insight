@@ -982,7 +982,7 @@ export default function SqlEditor({
           )}
         </TabsList>
         <TabsContent value="results" className="flex-1 overflow-auto min-h-0 mt-0 data-[state=inactive]:hidden">
-          <ResultsTable result={result} loading={running} />
+          <ResultsTable result={result} loading={running} resultSql={resultSql} />
         </TabsContent>
         <TabsContent value="statistics" className="flex-1 overflow-auto min-h-0 mt-0 data-[state=inactive]:hidden">
           <StatisticsPanel
