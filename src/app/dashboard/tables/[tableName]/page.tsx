@@ -22,6 +22,7 @@ import IndexUsageStats from "@/components/analysis/IndexUsageStats";
 import MissingIndexes from "@/components/analysis/MissingIndexes";
 import TableSizeCard from "@/components/analysis/TableSizeCard";
 import TableSchema from "@/components/analysis/TableSchema";
+import TableDataTab from "@/components/analysis/TableDataTab";
 import type { SampleSize } from "@/types/analysis";
 
 const FULL_SCAN_WARN_THRESHOLD = 500_000;
@@ -87,6 +88,7 @@ export default function TableAnalysisPage({ params }: PageProps) {
           <TabsList>
             <TabsTrigger value="overview">Overview</TabsTrigger>
             <TabsTrigger value="schema">Schema</TabsTrigger>
+            <TabsTrigger value="data">Data</TabsTrigger>
             <TabsTrigger value="distribution">Distribution</TabsTrigger>
             <TabsTrigger value="indexes">Indexes</TabsTrigger>
             <TabsTrigger value="missing">Missing Indexes</TabsTrigger>
@@ -114,6 +116,10 @@ export default function TableAnalysisPage({ params }: PageProps) {
 
         <TabsContent value="schema">
           <TableSchema tableName={tableName} />
+        </TabsContent>
+
+        <TabsContent value="data">
+          <TableDataTab tableName={tableName} />
         </TabsContent>
 
         <TabsContent value="distribution">
