@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/session";
-import { getSnapshots } from "@/lib/stats-db";
+import { getSnapshots, getLatestSnapshot } from "@/lib/stats-db";
+import { executeQuery } from "@/lib/db";
+import { SQL_SUMMARY_SERVER_INFO } from "@/lib/sql-queries";
 
 export async function GET() {
   try {
@@ -14,11 +16,21 @@ export async function GET() {
       return NextResponse.json({ error: "No database context in session" }, { status: 400 });
     }
 
-    const snapshots = getSnapshots(databaseName, 90);
+    const sid = session.sessionId;
 
-    // Use the canonical server name from stored snapshots if available,
-    // otherwise fall back to the session value (user-entered at login)
-    const serverName = snapshots[0]?.server_name ?? session.serverName ?? "";
+    // Get the canonical server name from SQL Server (@@SERVERNAME)
+    // This ensures we match the server name used when snapshots were saved
+    let serverName = session.serverName ?? "";
+    try {
+      const srvRows = await executeQuery<{ serverName: string }>(sid, SQL_SUMMARY_SERVER_INFO);
+      if (srvRows?.[0]?.serverName) {
+        serverName = srvRows[0].serverName;
+      }
+    } catch {
+      // Fall back to session value if query fails
+    }
+
+    const snapshots = getSnapshots(databaseName, serverName, 90);
 
     return NextResponse.json({ serverName, databaseName, snapshots });
   } catch (err) {

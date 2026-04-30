@@ -119,23 +119,24 @@ export function saveSnapshot(
 
 export function getSnapshots(
   databaseName: string,
+  serverName: string,
   limitDays = 90
 ): SnapshotRow[] {
   const db = getDb();
   return db.prepare(`
     SELECT * FROM db_snapshots
-    WHERE LOWER(database_name) = LOWER(?)
+    WHERE LOWER(database_name) = LOWER(?) AND LOWER(server_name) = LOWER(?)
     ORDER BY snapshot_date ASC
     LIMIT ?
-  `).all(databaseName, limitDays) as SnapshotRow[];
+  `).all(databaseName, serverName, limitDays) as SnapshotRow[];
 }
 
-export function getLatestSnapshot(databaseName: string): SnapshotRow | undefined {
+export function getLatestSnapshot(databaseName: string, serverName: string): SnapshotRow | undefined {
   const db = getDb();
   return db.prepare(`
     SELECT * FROM db_snapshots
-    WHERE LOWER(database_name) = LOWER(?)
+    WHERE LOWER(database_name) = LOWER(?) AND LOWER(server_name) = LOWER(?)
     ORDER BY snapshot_date DESC
     LIMIT 1
-  `).get(databaseName) as SnapshotRow | undefined;
+  `).get(databaseName, serverName) as SnapshotRow | undefined;
 }

@@ -8,10 +8,13 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, Database, ChevronRight, ArrowLeft, Check, Server, KeyRound, Monitor, FileKey, Info } from "lucide-react";
+import { Loader2, Database, ChevronRight, ArrowLeft, Check, Server, KeyRound, Monitor, FileKey, Info, Save } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { AuthMode, DbEngine } from "@/lib/mssql-config";
 import type { EnvDbConfig } from "@/app/api/env-config/route";
+import { SaveConnectionModal, type SaveConnectionData } from "./SaveConnectionModal";
+import { SaveConnectionPromptModal } from "./SaveConnectionPromptModal";
+import { SavedConnectionsList } from "./SavedConnectionsList";
 
 type Step = "credentials" | "database";
 
@@ -39,6 +42,9 @@ export default function ConnectionForm() {
   const [filter, setFilter] = useState("");
   const [envPrefilled, setEnvPrefilled] = useState(false);
   const [envDatabase, setEnvDatabase] = useState<string | null>(null);
+  const [showSaveModal, setShowSaveModal] = useState(false);
+  const [showSavePrompt, setShowSavePrompt] = useState(false);
+  const [promptData, setPromptData] = useState<{ serverName: string; databaseName: string } | null>(null);
 
   const [creds, setCreds] = useState<Credentials>({
     engine: "sqlserver",
@@ -140,6 +146,95 @@ export default function ConnectionForm() {
       const data = await res.json();
       if (data.success) {
         toast.success(`Connected to ${data.databaseName}`);
+
+        // Show save prompt if this is a new connection (not already saved)
+        if (data.shouldPromptSave && data.askToSave) {
+          setPromptData({
+            serverName: data.serverName,
+            databaseName: data.databaseName,
+          });
+          setShowSavePrompt(true);
+          return;
+        }
+
+        router.push("/dashboard");
+      } else {
+        toast.error(data.error ?? "Connection failed");
+      }
+    } catch {
+      toast.error("Network error");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleSaveConnection(data: SaveConnectionData) {
+    try {
+      const payload = { ...data, password: creds.authMode === "sql" ? creds.password : undefined };
+      const res = await fetch("/api/connections", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const result = await res.json();
+      if (result.success) {
+        toast.success("Connection saved!");
+        setShowSaveModal(false);
+      } else {
+        throw new Error(result.error || "Failed to save connection");
+      }
+    } catch (err) {
+      throw err instanceof Error ? err : new Error("Failed to save connection");
+    }
+  }
+
+  async function handleSavePrompt(data: { name: string; tag?: string; color?: string; database_name: string; dontShowAgain: boolean }) {
+    try {
+      const payload = {
+        name: data.name,
+        tag: data.tag,
+        color: data.color,
+        engine: creds.engine,
+        server: creds.server,
+        port: creds.port ? Number(creds.port) : undefined,
+        auth_mode: creds.authMode,
+        username: creds.authMode === "sql" ? creds.username : undefined,
+        password: creds.authMode === "sql" ? creds.password : undefined,
+        database_name: data.database_name,
+        encrypt: creds.encrypt,
+        trust_cert: creds.trustServerCertificate,
+      };
+
+      const res = await fetch("/api/connections", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const result = await res.json();
+      if (result.success) {
+        toast.success("Connection saved! Redirecting...");
+        setShowSavePrompt(false);
+        setPromptData(null);
+        setTimeout(() => router.push("/dashboard"), 500);
+      } else {
+        throw new Error(result.error || "Failed to save connection");
+      }
+    } catch (err) {
+      throw err instanceof Error ? err : new Error("Failed to save connection");
+    }
+  }
+
+  async function handleConnectFromSaved(connectionId: string) {
+    setLoading(true);
+    try {
+      const res = await fetch("/api/connect", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ connectionId }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        toast.success(`Connected to ${data.databaseName}`);
         router.push("/dashboard");
       } else {
         toast.error(data.error ?? "Connection failed");
@@ -197,8 +292,21 @@ export default function ConnectionForm() {
 
       <CardContent>
         {step === "credentials" ? (
-          <form onSubmit={handleFetchDatabases} className="space-y-4">
-            {/* Engine selector */}
+          <div className="space-y-4">
+            {/* Saved Connections Quick Access */}
+            <SavedConnectionsList onSelect={handleConnectFromSaved} isLoading={loading} />
+
+            <div className="relative">
+              <div className="absolute inset-0 flex items-center">
+                <div className="w-full border-t border-gray-300 dark:border-gray-700" />
+              </div>
+              <div className="relative flex justify-center text-xs uppercase">
+                <span className="bg-white dark:bg-zinc-950 px-2 text-gray-500">or enter manually</span>
+              </div>
+            </div>
+
+            <form onSubmit={handleFetchDatabases} className="space-y-4">
+              {/* Engine selector */}
             <div className="space-y-1.5">
               <Label>Database Engine</Label>
               <div className="flex flex-col gap-1.5">
@@ -345,19 +453,20 @@ export default function ConnectionForm() {
               Credentials are held in server memory only — never written to disk or the browser.
             </p>
 
-            {!envPrefilled && (
-              <div className="flex items-start gap-2 rounded-md border border-dashed px-3 py-2.5 text-xs text-muted-foreground">
-                <Info className="h-3.5 w-3.5 mt-0.5 flex-shrink-0" />
-                <span>
-                  <span className="font-medium text-foreground">Tip:</span> Add{" "}
-                  <code className="text-[11px]">DB_SERVER</code>,{" "}
-                  <code className="text-[11px]">DB_USERNAME</code>, and{" "}
-                  <code className="text-[11px]">DB_PASSWORD</code> to your{" "}
-                  <code className="text-[11px]">.env</code> file to auto-fill this form on every visit.
-                </span>
-              </div>
-            )}
-          </form>
+              {!envPrefilled && (
+                <div className="flex items-start gap-2 rounded-md border border-dashed px-3 py-2.5 text-xs text-muted-foreground">
+                  <Info className="h-3.5 w-3.5 mt-0.5 flex-shrink-0" />
+                  <span>
+                    <span className="font-medium text-foreground">Tip:</span> Add{" "}
+                    <code className="text-[11px]">DB_SERVER</code>,{" "}
+                    <code className="text-[11px]">DB_USERNAME</code>, and{" "}
+                    <code className="text-[11px]">DB_PASSWORD</code> to your{" "}
+                    <code className="text-[11px]">.env</code> file to auto-fill this form on every visit.
+                  </span>
+                </div>
+              )}
+            </form>
+            </div>
         ) : (
           <div className="space-y-4">
             {/* Connection summary */}
@@ -447,6 +556,10 @@ export default function ConnectionForm() {
                 <ArrowLeft className="h-4 w-4 mr-1" />
                 Back
               </Button>
+              <Button variant="outline" size="sm" onClick={() => setShowSaveModal(true)} disabled={loading}>
+                <Save className="h-4 w-4 mr-1" />
+                Save
+              </Button>
               <Button className="flex-1" onClick={handleConnect} disabled={!selectedDb || loading}>
                 {loading ? (
                   <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Connecting…</>
@@ -455,6 +568,34 @@ export default function ConnectionForm() {
                 )}
               </Button>
             </div>
+
+            <SaveConnectionModal
+              isOpen={showSaveModal}
+              onClose={() => setShowSaveModal(false)}
+              onSave={handleSaveConnection}
+              initialData={{
+                engine: creds.engine,
+                server: creds.server,
+                port: creds.port ? Number(creds.port) : undefined,
+                auth_mode: creds.authMode,
+                username: creds.username,
+                database_name: selectedDb,
+                encrypt: creds.encrypt,
+                trustServerCertificate: creds.trustServerCertificate,
+              }}
+            />
+
+            <SaveConnectionPromptModal
+              isOpen={showSavePrompt}
+              onClose={() => {
+                setShowSavePrompt(false);
+                setPromptData(null);
+                router.push("/dashboard");
+              }}
+              onSave={handleSavePrompt}
+              databaseName={promptData?.databaseName || ""}
+              serverName={promptData?.serverName || ""}
+            />
           </div>
         )}
       </CardContent>

@@ -4,20 +4,27 @@ import { randomUUID } from "crypto";
 import { getSession } from "@/lib/session";
 import { setCredentials, getOrCreatePool, clearSession } from "@/lib/session-store";
 import { buildMssqlConfig } from "@/lib/mssql-config";
+import { getConnection, decryptPassword, updateConnectionAskToSave } from "@/lib/editor-db";
 
 const connectSchema = z.object({
-  engine: z.enum(["sqlserver"]),
-  authMode: z.enum(["sql", "windows"]),
-  server: z.string().min(1, "Server is required"),
+  connectionId: z.string().uuid().optional(),
+  engine: z.enum(["sqlserver"]).optional(),
+  authMode: z.enum(["sql", "windows"]).optional(),
+  server: z.string().min(1, "Server is required").optional(),
   port: z.coerce.number().int().min(1).max(65535).optional(),
-  database: z.string().min(1, "Database name is required"),
+  database: z.string().min(1, "Database name is required").optional(),
   username: z.string().optional(),
   password: z.string().optional(),
-  encrypt: z.boolean().default(false),
-  trustServerCertificate: z.boolean().default(true),
+  encrypt: z.boolean().default(false).optional(),
+  trustServerCertificate: z.boolean().default(true).optional(),
 }).refine(
-  (d) => d.authMode !== "sql" || (!!d.username && !!d.password),
-  { message: "Username and password are required for SQL Server authentication" }
+  (d) => {
+    if (d.connectionId) return true;
+    if (!d.server || !d.database) return false;
+    if (d.authMode === "sql") return !!d.username && !!d.password;
+    return true;
+  },
+  { message: "Either connectionId or full connection details required" }
 );
 
 export async function POST(req: NextRequest) {
@@ -32,8 +39,51 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const { database, server } = parsed.data;
-    const config = buildMssqlConfig(parsed.data, database);
+    let connectData = parsed.data;
+
+    if (parsed.data.connectionId) {
+      const saved = getConnection(parsed.data.connectionId);
+      if (!saved) {
+        return NextResponse.json(
+          { success: false, error: "Connection not found" },
+          { status: 404 }
+        );
+      }
+
+      const decryptedPassword = saved.password_enc ? decryptPassword(saved.password_enc) : undefined;
+      connectData = {
+        connectionId: parsed.data.connectionId,
+        engine: saved.engine as "sqlserver",
+        authMode: saved.auth_mode as "sql" | "windows",
+        server: saved.server,
+        port: saved.port,
+        database: saved.database_name || "",
+        username: saved.username,
+        password: decryptedPassword,
+        encrypt: saved.encrypt === 1,
+        trustServerCertificate: saved.trust_cert === 1,
+      };
+    }
+
+    if (!connectData.server || !connectData.authMode || !connectData.engine) {
+      return NextResponse.json(
+        { success: false, error: "Invalid connection data" },
+        { status: 400 }
+      );
+    }
+
+    const database = connectData.database || "";
+    const server = connectData.server;
+    const config = buildMssqlConfig({
+      engine: connectData.engine,
+      authMode: connectData.authMode,
+      server: connectData.server,
+      port: connectData.port,
+      username: connectData.username,
+      password: connectData.password,
+      encrypt: connectData.encrypt ?? false,
+      trustServerCertificate: connectData.trustServerCertificate ?? true,
+    }, database);
     const sessionId = randomUUID();
 
     setCredentials(sessionId, config);
@@ -48,12 +98,24 @@ export async function POST(req: NextRequest) {
 
     const session = await getSession();
     session.sessionId = sessionId;
+    session.connectionId = parsed.data.connectionId;
     session.connected = true;
     session.databaseName = database;
-    session.serverName = server; // original user-entered string for display
+    session.serverName = server;
     await session.save();
 
-    return NextResponse.json({ success: true, databaseName: database, serverName: server });
+    // Check if we should prompt to save this connection
+    const shouldPromptSave = !parsed.data.connectionId; // Don't prompt if already a saved connection
+    const savedConnectionForThisServer = shouldPromptSave ? null : (parsed.data.connectionId ? getConnection(parsed.data.connectionId) : null);
+    const askToSave = savedConnectionForThisServer?.ask_to_save ?? 1;
+
+    return NextResponse.json({
+      success: true,
+      databaseName: database,
+      serverName: server,
+      shouldPromptSave,
+      askToSave: askToSave === 1,
+    });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unexpected error";
     return NextResponse.json({ success: false, error: message }, { status: 500 });
