@@ -560,11 +560,11 @@ export default function ConnectionForm() {
                 <Save className="h-4 w-4 mr-1" />
                 Save
               </Button>
-              <Button className="flex-1" onClick={handleConnect} disabled={!selectedDb || loading}>
+              <Button size="sm" className="flex-1" onClick={handleConnect} disabled={!selectedDb || loading}>
                 {loading ? (
-                  <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Connecting…</>
+                  <><Loader2 className="h-4 w-4 animate-spin" />Connecting…</>
                 ) : (
-                  <>Connect to <span className="font-mono ml-1">{selectedDb}</span></>
+                  <>Connect</>
                 )}
               </Button>
             </div>

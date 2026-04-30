@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { AlertCircle, Trash2 } from "lucide-react";
 import { toast } from "sonner";
+import { Button } from "@/components/ui/button";
 
 interface SavedConnection {
   id: string;
@@ -109,14 +110,16 @@ export function SavedConnectionsList({ onSelect, isLoading }: SavedConnectionsLi
                 {conn.username && ` (${conn.username})`}
               </div>
             </button>
-            <button
+            <Button
+              variant="ghost"
+              size="icon-sm"
               onClick={(e) => handleDelete(e, conn.id)}
               disabled={deleting === conn.id || isLoading}
-              className="p-2 mr-1 text-gray-400 hover:text-red-600 dark:hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity disabled:opacity-50"
+              className="mr-1 opacity-0 group-hover:opacity-100 transition-opacity"
               title="Delete connection"
             >
               <Trash2 className="h-4 w-4" />
-            </button>
+            </Button>
           </div>
         ))}
       </div>

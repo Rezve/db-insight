@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { X } from "lucide-react";
+import { Button } from "@/components/ui/button";
 
 interface SaveConnectionModalProps {
   isOpen: boolean;
@@ -95,13 +96,14 @@ export function SaveConnectionModal({ isOpen, onClose, onSave, initialData }: Sa
       <div className="w-full max-w-sm rounded-lg bg-white dark:bg-gray-950 shadow-lg">
         <div className="flex items-center justify-between border-b border-gray-200 dark:border-gray-800 p-4">
           <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Save Connection</h2>
-          <button
+          <Button
+            variant="ghost"
+            size="icon-sm"
             onClick={onClose}
             disabled={isLoading}
-            className="rounded-lg p-1 hover:bg-gray-100 dark:hover:bg-gray-800 disabled:opacity-50"
           >
             <X className="h-5 w-5" />
-          </button>
+          </Button>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4 p-4">
@@ -171,21 +173,22 @@ export function SaveConnectionModal({ isOpen, onClose, onSave, initialData }: Sa
           </div>
 
           <div className="flex gap-2 border-t border-gray-200 dark:border-gray-800 pt-4">
-            <button
+            <Button
               type="button"
+              variant="outline"
               onClick={onClose}
               disabled={isLoading}
-              className="flex-1 rounded-lg border border-gray-300 dark:border-gray-700 px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-50"
+              className="flex-1"
             >
               Cancel
-            </button>
-            <button
+            </Button>
+            <Button
               type="submit"
               disabled={isLoading || !name.trim()}
-              className="flex-1 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:bg-gray-400"
+              className="flex-1"
             >
               {isLoading ? "Saving..." : "Save"}
-            </button>
+            </Button>
           </div>
         </form>
       </div>
