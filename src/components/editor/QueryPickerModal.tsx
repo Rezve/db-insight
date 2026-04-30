@@ -15,6 +15,7 @@ interface QueryPickerModalProps {
 export default function QueryPickerModal({ open, queries, defaultIndex, onSelect, onClose }: QueryPickerModalProps) {
   const [selectedIndex, setSelectedIndex] = useState(0);
   const itemRefs = useRef<(HTMLButtonElement | null)[]>([]);
+  const mouseMovedRef = useRef(false);
 
   const displayOrder = [
     defaultIndex,
@@ -23,7 +24,10 @@ export default function QueryPickerModal({ open, queries, defaultIndex, onSelect
 
   // Reset to top (cursor item) each time the modal opens
   useEffect(() => {
-    if (open) setSelectedIndex(0);
+    if (open) {
+      setSelectedIndex(0);
+      mouseMovedRef.current = false;
+    }
   }, [open, defaultIndex]);
 
   useEffect(() => {
@@ -55,7 +59,10 @@ export default function QueryPickerModal({ open, queries, defaultIndex, onSelect
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
-      <div className="bg-background border rounded-lg shadow-xl w-[600px] max-w-[90vw] max-h-[70vh] flex flex-col">
+      <div
+        className="bg-background border rounded-lg shadow-xl w-[600px] max-w-[90vw] max-h-[70vh] flex flex-col"
+        onMouseMove={() => { mouseMovedRef.current = true; }}
+      >
         <div className="flex items-center justify-between px-4 py-3 border-b shrink-0">
           <span className="text-sm font-medium">Select a query to run</span>
           <Button size="sm" variant="ghost" className="h-6 w-6 p-0" onClick={onClose}>
@@ -71,12 +78,10 @@ export default function QueryPickerModal({ open, queries, defaultIndex, onSelect
                 key={origIdx}
                 ref={el => { itemRefs.current[displayIdx] = el; }}
                 onClick={() => { onSelect(query); onClose(); }}
-                onMouseEnter={() => setSelectedIndex(displayIdx)}
+                onMouseEnter={() => { if (mouseMovedRef.current) setSelectedIndex(displayIdx); }}
                 className={[
                   "w-full text-left px-3 py-2 rounded-md border transition-colors",
-                  isSelected
-                    ? "bg-accent border-ring"
-                    : "hover:bg-accent hover:border-accent-foreground/20",
+                  isSelected ? "bg-accent border-ring" : "border-transparent",
                 ].join(" ")}
               >
                 <pre className="font-mono text-xs text-foreground whitespace-pre-wrap break-all line-clamp-3">
