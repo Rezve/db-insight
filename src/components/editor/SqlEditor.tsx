@@ -2,6 +2,7 @@
 
 import { useRef, useState, useCallback, useEffect } from "react";
 import { useTheme } from "next-themes";
+import { useRouter } from "next/navigation";
 import { useEditorFontSize } from "@/hooks/use-editor-font-size";
 import dynamic from "next/dynamic";
 import type { editor, languages, IRange } from "monaco-editor";
@@ -23,6 +24,8 @@ import {
   analyzeQueryAt,
   collectDiagnostics,
   resolveQualifier,
+  tokenize,
+  type SqlToken,
   type SchemaIndex,
 } from "@/lib/sql-intellisense";
 
@@ -72,6 +75,62 @@ interface SqlEditorProps {
   onActiveResultTabChange: (tab: string) => void;
 }
 
+function extractTableNameTokens(
+  sql: string,
+  index: SchemaIndex
+): Array<{ token: SqlToken; tableKey: string }> {
+  const tokens = tokenize(sql).filter((t) => t.kind !== "comment");
+  const TABLE_INTRO = new Set(["FROM", "JOIN", "UPDATE", "INTO"]);
+  const JOIN_MODS = new Set(["INNER", "LEFT", "RIGHT", "FULL", "OUTER", "CROSS"]);
+  const results: Array<{ token: SqlToken; tableKey: string }> = [];
+
+  let i = 0;
+  while (i < tokens.length) {
+    const t = tokens[i];
+    if (t.kind === "keyword" && JOIN_MODS.has(t.value)) { i++; continue; }
+
+    if (t.kind === "keyword" && TABLE_INTRO.has(t.value)) {
+      i++;
+      while (i < tokens.length && tokens[i].kind === "keyword" && JOIN_MODS.has(tokens[i].value)) i++;
+
+      let expectTable = true;
+      while (expectTable) {
+        expectTable = false;
+        if (i >= tokens.length || tokens[i].kind !== "identifier") break;
+
+        const first = tokens[i];
+        let tableToken: SqlToken;
+        let tableKey: string;
+
+        if (tokens[i + 1]?.kind === "dot" && tokens[i + 2]?.kind === "identifier") {
+          tableToken = tokens[i + 2];
+          tableKey = `${first.value.toLowerCase()}.${tableToken.value.toLowerCase()}`;
+          i += 3;
+        } else {
+          tableToken = first;
+          tableKey = first.value.toLowerCase();
+          i += 1;
+        }
+
+        if (index.tablesByKey.has(tableKey)) {
+          results.push({ token: tableToken, tableKey });
+        }
+
+        if (i < tokens.length && tokens[i].kind === "keyword" && tokens[i].value === "AS") i += 2;
+        else if (i < tokens.length && tokens[i].kind === "identifier" && tokens[i + 1]?.kind !== "dot") i++;
+
+        if (i < tokens.length && tokens[i].kind === "comma") {
+          i++;
+          expectTable = true;
+        }
+      }
+      continue;
+    }
+    i++;
+  }
+  return results;
+}
+
 export default function SqlEditor({
   tabId,
   sql,
@@ -106,8 +165,11 @@ export default function SqlEditor({
   }
 
   const { resolvedTheme } = useTheme();
+  const router = useRouter();
   const { fontSize: editorFontSize, setFontSize, min: minFontSize, max: maxFontSize } = useEditorFontSize();
   const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null);
+  const tableDecorationsRef = useRef<editor.IEditorDecorationsCollection | null>(null);
+  const updateTableDecorationsRef = useRef<() => void>(() => {});
   const abortRef = useRef<AbortController | null>(null);
   const monacoRef = useRef<typeof import("monaco-editor") | null>(null);
   const schemaRef = useRef<SchemaData | null>(null);
@@ -126,6 +188,7 @@ export default function SqlEditor({
   const [queryPickerOptions, setQueryPickerOptions] = useState<string[]>([]);
   const [queryPickerDefaultIndex, setQueryPickerDefaultIndex] = useState(0);
 
+
   // Load schema for autocomplete once on mount
   useEffect(() => {
     fetch("/api/schema")
@@ -134,6 +197,7 @@ export default function SqlEditor({
         schemaRef.current = data;
         schemaIndexRef.current = buildSchemaIndex(data);
         runDiagnostics();
+        updateTableDecorationsRef.current();
       })
       .catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -448,6 +512,7 @@ export default function SqlEditor({
           };
         },
       });
+
     },
     []
   );
@@ -460,11 +525,50 @@ export default function SqlEditor({
     monacoRef.current = monacoInstance;
     registerProviders(monacoInstance);
 
+    // Decorate known table names and navigate on Ctrl+Click
+    const tableDecorations = editorInstance.createDecorationsCollection([]);
+    tableDecorationsRef.current = tableDecorations;
+
+    function updateTableDecorations() {
+      const index = schemaIndexRef.current;
+      const model = editorInstance.getModel();
+      if (!index || !model) { tableDecorations.clear(); return; }
+      tableDecorations.set(
+        extractTableNameTokens(model.getValue(), index).map(({ token }) => ({
+          range: {
+            startLineNumber: model.getPositionAt(token.start).lineNumber,
+            startColumn: model.getPositionAt(token.start).column,
+            endLineNumber: model.getPositionAt(token.end).lineNumber,
+            endColumn: model.getPositionAt(token.end).column,
+          },
+          options: { inlineClassName: "sql-table-link" },
+        }))
+      );
+    }
+
+    updateTableDecorationsRef.current = updateTableDecorations;
+    updateTableDecorations();
+
+    editorInstance.onMouseDown((e) => {
+      if (!e.event.ctrlKey) return;
+      const pos = e.target.position;
+      const index = schemaIndexRef.current;
+      const model = editorInstance.getModel();
+      if (!pos || !index || !model) return;
+      const offset = model.getOffsetAt(pos);
+      const hit = extractTableNameTokens(model.getValue(), index)
+        .find(({ token }) => offset >= token.start && offset < token.end);
+      if (!hit) return;
+      const table = index.tablesByKey.get(hit.tableKey)!;
+      router.push(`/dashboard/tables/${encodeURIComponent(`${table.schema}.${table.name}`)}?tab=schema`);
+    });
+
     // Debounced diagnostics on every content change.
     const model = editorInstance.getModel();
     if (model) {
       model.onDidChangeContent((e) => {
         scheduleDiagnostics();
+        updateTableDecorations();
         // When ( is typed (possibly auto-closed to ()), Monaco suppresses the suggest
         // widget for bracket completion. Re-trigger it if we're in an INSERT column list.
         const hasOpenParen = e.changes.some((c) => c.text.startsWith("("));

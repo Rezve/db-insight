@@ -136,3 +136,9 @@
 [data-sonner-toast] {
   cursor: pointer !important;
 }
+
+/* Monaco SQL table name links: underline only on hover */
+.monaco-editor .sql-table-link:hover {
+  text-decoration: underline;
+  cursor: pointer;
+}

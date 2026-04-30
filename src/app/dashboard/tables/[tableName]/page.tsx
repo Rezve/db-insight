@@ -1,6 +1,7 @@
 "use client";
 
 import { use, useState, useCallback } from "react";
+import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -32,6 +33,8 @@ interface PageProps {
 export default function TableAnalysisPage({ params }: PageProps) {
   const { tableName: encodedTableName } = use(params);
   const tableName = decodeURIComponent(encodedTableName);
+  const searchParams = useSearchParams();
+  const defaultTab = searchParams.get("tab") ?? "overview";
 
   const [sampleSize, setSampleSize] = useState<SampleSize>("small");
   const [pendingSampleSize, setPendingSampleSize] = useState<SampleSize | null>(null);
@@ -79,7 +82,7 @@ export default function TableAnalysisPage({ params }: PageProps) {
       </div>
 
       {/* Tabs */}
-      <Tabs defaultValue="overview" className="space-y-4">
+      <Tabs defaultValue={defaultTab} className="space-y-4">
         <div className="flex items-center justify-between flex-wrap gap-3">
           <TabsList>
             <TabsTrigger value="overview">Overview</TabsTrigger>
