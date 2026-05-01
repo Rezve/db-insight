@@ -8,11 +8,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, Database, ChevronRight, ArrowLeft, Check, Server, KeyRound, Monitor, FileKey, Info, Save } from "lucide-react";
+import { Loader2, Database, ChevronRight, ArrowLeft, Check, Server, KeyRound, Monitor, FileKey, Info } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { AuthMode, DbEngine } from "@/lib/mssql-config";
 import type { EnvDbConfig } from "@/app/api/env-config/route";
-import { SaveConnectionModal, type SaveConnectionData } from "./SaveConnectionModal";
 import { SaveConnectionPromptModal } from "./SaveConnectionPromptModal";
 import { SavedConnectionsList } from "./SavedConnectionsList";
 
@@ -42,7 +41,6 @@ export default function ConnectionForm() {
   const [filter, setFilter] = useState("");
   const [envPrefilled, setEnvPrefilled] = useState(false);
   const [envDatabase, setEnvDatabase] = useState<string | null>(null);
-  const [showSaveModal, setShowSaveModal] = useState(false);
   const [showSavePrompt, setShowSavePrompt] = useState(false);
   const [promptData, setPromptData] = useState<{ serverName: string; databaseName: string } | null>(null);
 
@@ -168,25 +166,6 @@ export default function ConnectionForm() {
     }
   }
 
-  async function handleSaveConnection(data: SaveConnectionData) {
-    try {
-      const payload = { ...data, password: creds.authMode === "sql" ? creds.password : undefined };
-      const res = await fetch("/api/connections", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      const result = await res.json();
-      if (result.success) {
-        toast.success("Connection saved!");
-        setShowSaveModal(false);
-      } else {
-        throw new Error(result.error || "Failed to save connection");
-      }
-    } catch (err) {
-      throw err instanceof Error ? err : new Error("Failed to save connection");
-    }
-  }
 
   async function handleSavePrompt(data: { name: string; tag?: string; color?: string; database_name: string; dontShowAgain: boolean }) {
     try {
@@ -556,10 +535,6 @@ export default function ConnectionForm() {
                 <ArrowLeft className="h-4 w-4 mr-1" />
                 Back
               </Button>
-              <Button variant="outline" size="sm" onClick={() => setShowSaveModal(true)} disabled={loading}>
-                <Save className="h-4 w-4 mr-1" />
-                Save
-              </Button>
               <Button size="sm" className="flex-1" onClick={handleConnect} disabled={!selectedDb || loading}>
                 {loading ? (
                   <><Loader2 className="h-4 w-4 animate-spin" />Connecting…</>
@@ -568,22 +543,6 @@ export default function ConnectionForm() {
                 )}
               </Button>
             </div>
-
-            <SaveConnectionModal
-              isOpen={showSaveModal}
-              onClose={() => setShowSaveModal(false)}
-              onSave={handleSaveConnection}
-              initialData={{
-                engine: creds.engine,
-                server: creds.server,
-                port: creds.port ? Number(creds.port) : undefined,
-                auth_mode: creds.authMode,
-                username: creds.username,
-                database_name: selectedDb,
-                encrypt: creds.encrypt,
-                trustServerCertificate: creds.trustServerCertificate,
-              }}
-            />
 
             <SaveConnectionPromptModal
               isOpen={showSavePrompt}
