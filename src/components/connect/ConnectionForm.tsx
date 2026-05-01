@@ -395,7 +395,7 @@ export default function ConnectionForm() {
             </Button>
 
             <p className="text-xs text-center text-muted-foreground">
-              Credentials are held in server memory only — never written to disk or the browser.
+              Your password is AES-256 encrypted and saved to a local database so you can reconnect in one click — it never leaves your machine.
             </p>
             </form>
             </div>
