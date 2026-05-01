@@ -490,9 +490,9 @@ export default function ConnectionForm() {
               </Button>
               <Button size="sm" className="flex-1" onClick={handleConnect} disabled={!selectedDb || loading}>
                 {loading ? (
-                  <><Loader2 className="h-4 w-4 animate-spin mr-1" />Connecting…</>
+                  <><Loader2 className="h-4 w-4 animate-spin" />Connecting…</>
                 ) : (
-                  <>Connect<ChevronRight className="h-4 w-4 ml-1" /></>
+                  <>Connect<ChevronRight className="h-4 w-4" /></>
                 )}
               </Button>
             </div>
