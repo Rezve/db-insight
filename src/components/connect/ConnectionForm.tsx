@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -8,10 +8,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, Database, ChevronRight, ArrowLeft, Check, Server, KeyRound, Monitor, FileKey, Info } from "lucide-react";
+import { Loader2, Database, ChevronRight, ArrowLeft, Check, Server, KeyRound, Monitor } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { AuthMode, DbEngine } from "@/lib/mssql-config";
-import type { EnvDbConfig } from "@/app/api/env-config/route";
 import { SaveConnectionPromptModal } from "./SaveConnectionPromptModal";
 import { SavedConnectionsList } from "./SavedConnectionsList";
 
@@ -39,8 +38,6 @@ export default function ConnectionForm() {
   const [databases, setDatabases] = useState<string[]>([]);
   const [selectedDb, setSelectedDb] = useState("");
   const [filter, setFilter] = useState("");
-  const [envPrefilled, setEnvPrefilled] = useState(false);
-  const [envDatabase, setEnvDatabase] = useState<string | null>(null);
   const [showSavePrompt, setShowSavePrompt] = useState(false);
   const [promptData, setPromptData] = useState<{ serverName: string; databaseName: string } | null>(null);
 
@@ -52,29 +49,9 @@ export default function ConnectionForm() {
     username: "",
     password: "",
     encrypt: false,
-    trustServerCertificate: true,
+    trustServerCertificate: false,
   });
 
-  useEffect(() => {
-    fetch("/api/env-config")
-      .then((r) => r.json())
-      .then(({ config }: { config: EnvDbConfig | null }) => {
-        if (!config) return;
-        setCreds((prev) => ({
-          ...prev,
-          server: config.server,
-          port: config.port != null ? String(config.port) : "",
-          authMode: config.authMode,
-          username: config.username ?? "",
-          password: config.password ?? "",
-          encrypt: config.encrypt,
-          trustServerCertificate: config.trustServerCertificate,
-        }));
-        setEnvPrefilled(true);
-        if (config.database) setEnvDatabase(config.database);
-      })
-      .catch(() => {/* silently ignore — env config is optional */});
-  }, []);
 
   function setField<K extends keyof Credentials>(field: K, value: Credentials[K]) {
     setCreds((prev) => ({ ...prev, [field]: value }));
@@ -115,13 +92,8 @@ export default function ConnectionForm() {
       } else {
         const dbs: string[] = data.databases ?? [];
         setDatabases(dbs);
-        // Prefer DB_DATABASE from .env, else first non-system db
         const SYSTEM = new Set(["master", "model", "msdb", "tempdb"]);
-        setSelectedDb(
-          (envDatabase && dbs.includes(envDatabase))
-            ? envDatabase
-            : dbs.find((d) => !SYSTEM.has(d)) ?? dbs[0] ?? ""
-        );
+        setSelectedDb(dbs.find((d) => !SYSTEM.has(d)) ?? dbs[0] ?? "");
         setFilter("");
         setStep("database");
       }
@@ -240,12 +212,6 @@ export default function ConnectionForm() {
         <CardTitle className="flex items-center gap-2 text-lg">
           <Database className="h-5 w-5" />
           {step === "credentials" ? "New Connection" : "Select Database"}
-          {envPrefilled && (
-            <Badge variant="secondary" className="ml-auto text-[10px] gap-1 text-emerald-700 bg-emerald-50 border-emerald-200 dark:text-emerald-400 dark:bg-emerald-950 dark:border-emerald-800">
-              <FileKey className="h-3 w-3" />
-              Pre-filled from .env
-            </Badge>
-          )}
         </CardTitle>
         {/* Step indicator */}
         <CardDescription>
@@ -355,7 +321,7 @@ export default function ConnectionForm() {
                 <Label htmlFor="server">Server</Label>
                 <Input
                   id="server"
-                  placeholder="localhost\SQLEXPRESS"
+                  placeholder="e.g., server.example.com"
                   value={creds.server}
                   onChange={handleInputChange("server")}
                   required
@@ -363,7 +329,7 @@ export default function ConnectionForm() {
                   spellCheck={false}
                 />
                 <p className="text-[10px] text-muted-foreground">
-                  Formats: <code>host</code> · <code>host\INSTANCE</code> · <code>host,port</code>
+                  Enter your database server address
                 </p>
               </div>
               <div className="space-y-1.5">
@@ -371,7 +337,7 @@ export default function ConnectionForm() {
                 <Input
                   id="port"
                   type="number"
-                  placeholder="auto"
+                  placeholder="1433"
                   value={creds.port}
                   onChange={handleInputChange("port")}
                 />
@@ -385,7 +351,7 @@ export default function ConnectionForm() {
                   <Label htmlFor="username">Username</Label>
                   <Input
                     id="username"
-                    placeholder="sa"
+                    placeholder="e.g., admin"
                     value={creds.username}
                     onChange={handleInputChange("username")}
                     required
@@ -416,7 +382,7 @@ export default function ConnectionForm() {
               </label>
               <label className="flex items-center gap-2 cursor-pointer text-sm">
                 <input type="checkbox" checked={creds.trustServerCertificate} onChange={handleInputChange("trustServerCertificate")} className="rounded" />
-                <span>Trust server certificate <span className="text-xs text-muted-foreground">(for local / self-signed)</span></span>
+                <span>Trust server certificate <span className="text-xs text-muted-foreground">(for self-signed certificates)</span></span>
               </label>
             </div>
 
@@ -431,19 +397,6 @@ export default function ConnectionForm() {
             <p className="text-xs text-center text-muted-foreground">
               Credentials are held in server memory only — never written to disk or the browser.
             </p>
-
-              {!envPrefilled && (
-                <div className="flex items-start gap-2 rounded-md border border-dashed px-3 py-2.5 text-xs text-muted-foreground">
-                  <Info className="h-3.5 w-3.5 mt-0.5 flex-shrink-0" />
-                  <span>
-                    <span className="font-medium text-foreground">Tip:</span> Add{" "}
-                    <code className="text-[11px]">DB_SERVER</code>,{" "}
-                    <code className="text-[11px]">DB_USERNAME</code>, and{" "}
-                    <code className="text-[11px]">DB_PASSWORD</code> to your{" "}
-                    <code className="text-[11px]">.env</code> file to auto-fill this form on every visit.
-                  </span>
-                </div>
-              )}
             </form>
             </div>
         ) : (
