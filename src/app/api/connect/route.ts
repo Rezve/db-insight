@@ -4,7 +4,7 @@ import { randomUUID } from "crypto";
 import { getSession } from "@/lib/session";
 import { setCredentials, getOrCreatePool, clearSession } from "@/lib/session-store";
 import { buildMssqlConfig } from "@/lib/mssql-config";
-import { getConnection, decryptPassword, updateConnectionAskToSave } from "@/lib/editor-db";
+import { getConnection, decryptPassword, updateConnectionAskToSave, findConnectionByCredentials } from "@/lib/editor-db";
 
 const connectSchema = z.object({
   connectionId: z.string().uuid().optional(),
@@ -105,8 +105,15 @@ export async function POST(req: NextRequest) {
     await session.save();
 
     // Check if we should prompt to save this connection
-    const shouldPromptSave = !parsed.data.connectionId; // Don't prompt if already a saved connection
-    const savedConnectionForThisServer = shouldPromptSave ? null : (parsed.data.connectionId ? getConnection(parsed.data.connectionId) : null);
+    // Don't prompt if using a saved connection OR if this exact connection already exists in the DB
+    const existingConnection = findConnectionByCredentials(
+      connectData.server,
+      connectData.port,
+      connectData.username,
+      connectData.database
+    );
+    const shouldPromptSave = !parsed.data.connectionId && !existingConnection;
+    const savedConnectionForThisServer = parsed.data.connectionId ? getConnection(parsed.data.connectionId) : existingConnection;
     const askToSave = savedConnectionForThisServer?.ask_to_save ?? 1;
 
     return NextResponse.json({

@@ -177,6 +177,13 @@ export function updateConnectionAskToSave(id: string, askToSave: boolean): void 
   db.prepare("UPDATE connections SET ask_to_save = ? WHERE id = ?").run(askToSave ? 1 : 0, id);
 }
 
+export function findConnectionByCredentials(server: string, port: number | undefined, username: string | undefined, database_name: string | undefined): SavedConnection | undefined {
+  const db = getDb();
+  return db
+    .prepare("SELECT * FROM connections WHERE server = ? AND port IS ? AND username IS ? AND database_name IS ? LIMIT 1")
+    .get(server, port ?? null, username ?? null, database_name ?? null) as SavedConnection | undefined;
+}
+
 export function encryptPassword(password: string): string {
   return encrypt(password);
 }
