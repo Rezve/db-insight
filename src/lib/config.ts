@@ -13,9 +13,6 @@ export function getDataDir(): string {
   if (process.env.DATA_DIR) {
     return path.resolve(process.env.DATA_DIR);
   }
-  if (process.env.NODE_ENV === "production") {
-    return "/data";
-  }
   return path.resolve(process.cwd(), "data");
 }
 
