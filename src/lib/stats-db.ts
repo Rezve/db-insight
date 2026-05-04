@@ -2,6 +2,7 @@ import Database from "better-sqlite3";
 import path from "path";
 import fs from "fs";
 import type { DatabaseSummary } from "@/types/db";
+import { getDataDir } from "@/lib/config";
 
 declare global {
   // eslint-disable-next-line no-var
@@ -11,7 +12,7 @@ declare global {
 function getDb(): Database.Database {
   if (global.__statsDb) return global.__statsDb;
 
-  const dataDir = path.join(process.cwd(), "data");
+  const dataDir = getDataDir();
   fs.mkdirSync(dataDir, { recursive: true });
 
   const db = new Database(path.join(dataDir, "editor.db"));

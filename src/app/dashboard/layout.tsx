@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/session";
+import { isSetupComplete } from "@/lib/config";
 import { executeQuery } from "@/lib/db";
 import { SQL_LIST_TABLES } from "@/lib/sql-queries";
 import Header from "@/components/dashboard/Header";
@@ -11,6 +12,10 @@ export default async function DashboardLayout({
 }: {
   children: React.ReactNode;
 }) {
+  if (!isSetupComplete()) {
+    redirect("/setup");
+  }
+
   const session = await getSession();
   if (!session.connected || !session.sessionId) {
     redirect("/connect");

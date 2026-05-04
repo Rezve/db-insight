@@ -1,0 +1,40 @@
+services:
+  db-insight:
+    # Replace with your Docker Hub image after publishing:
+    # image: yourdockerhubuser/db-insight:0.1.0
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    volumes:
+      # Named volume persists the SQLite database, encryption key, and config.json
+      # across container restarts and image updates.
+      #
+      # To use a bind mount instead (e.g. to access files from the host):
+      #   - /your/host/path:/data
+      # Note: ensure the host directory is writable by UID 1000 (the node user).
+      - db-insight-data:/data
+    environment:
+      NODE_ENV: production
+      # DATA_DIR defaults to /data — only override if you use a custom mount path.
+      # DATA_DIR: /data
+
+      # Option A: Skip the setup wizard by providing SESSION_SECRET here.
+      # Must be at least 32 characters. Generate one with:
+      #   openssl rand -hex 32
+      # SESSION_SECRET: "your-secret-here-minimum-32-characters"
+
+      # Option B: Leave SESSION_SECRET unset.
+      # On first visit, the setup wizard will generate and save it to /data/config.json.
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+volumes:
+  db-insight-data:
+    driver: local

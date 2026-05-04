@@ -1,8 +1,8 @@
 import crypto from "crypto";
 import fs from "fs";
 import path from "path";
+import { getDataDir } from "@/lib/config";
 
-const KEY_PATH = path.join(process.cwd(), "data", ".key");
 const KEY_LENGTH = 32; // 256 bits for AES-256
 const IV_LENGTH = 16;
 const ALGORITHM = "aes-256-gcm";
@@ -10,13 +10,19 @@ const AUTH_TAG_LENGTH = 16;
 
 let cachedKey: Buffer | null = null;
 
+function getKeyPath(): string {
+  return path.join(getDataDir(), ".key");
+}
+
 function ensureKeyExists(): Buffer {
   if (cachedKey) return cachedKey;
 
-  if (fs.existsSync(KEY_PATH)) {
-    cachedKey = fs.readFileSync(KEY_PATH);
+  const keyPath = getKeyPath();
+
+  if (fs.existsSync(keyPath)) {
+    cachedKey = fs.readFileSync(keyPath);
     if (cachedKey.length !== KEY_LENGTH) {
-      throw new Error(`Encryption key at ${KEY_PATH} has invalid length: ${cachedKey.length}, expected ${KEY_LENGTH}`);
+      throw new Error(`Encryption key at ${keyPath} has invalid length: ${cachedKey.length}, expected ${KEY_LENGTH}`);
     }
     return cachedKey;
   }
@@ -25,13 +31,13 @@ function ensureKeyExists(): Buffer {
   const key = crypto.randomBytes(KEY_LENGTH);
 
   // Ensure data directory exists
-  const dataDir = path.dirname(KEY_PATH);
+  const dataDir = path.dirname(keyPath);
   if (!fs.existsSync(dataDir)) {
     fs.mkdirSync(dataDir, { recursive: true });
   }
 
   // Write with restricted permissions (owner read/write only)
-  fs.writeFileSync(KEY_PATH, key, { mode: 0o600 });
+  fs.writeFileSync(keyPath, key, { mode: 0o600 });
   cachedKey = key;
 
   return key;

@@ -1,8 +1,13 @@
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/session";
+import { isSetupComplete } from "@/lib/config";
 import ConnectionForm from "@/components/connect/ConnectionForm";
 
 export default async function ConnectPage() {
+  if (!isSetupComplete()) {
+    redirect("/setup");
+  }
+
   const session = await getSession();
   if (session.connected && session.sessionId) {
     redirect("/dashboard");
