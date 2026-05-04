@@ -2,11 +2,34 @@
 
 A self-hosted SQL Server analysis tool built with Next.js. Connect to any SQL Server or Azure SQL database and explore its schema, run queries, analyze table distributions, inspect indexes, and visualize execution plans — all from a browser UI with credentials that never leave your machine.
 
+> Built for developers and DBAs who want a lightweight, local-first alternative to heavyweight SQL Server Management Studio or Azure Data Studio features. No telemetry, no cloud dependency — your credentials stay on your machine.
+
+**Supports:** SQL Server 2016+ and Azure SQL Database.
+
+<!-- Add a screenshot here: docs/screenshot.png -->
+
+---
+
+## Contents
+
+- [Features](#features)
+- [Running with Docker (recommended)](#running-with-docker-recommended)
+- [Running Locally (development)](#running-locally-development)
+- [Configuration](#configuration)
+- [Security Notes](#security-notes)
+- [Health Check](#health-check)
+- [Troubleshooting](#troubleshooting)
+- [Tech Stack](#tech-stack)
+- [Project Structure](#project-structure)
+
+---
+
 ## Features
 
 - **Secure connection management** — credentials stored server-side in memory, never exposed to the browser; saved connections encrypted with AES-256-GCM
 - **SQL Editor** — Monaco-based editor with SQL autocomplete, run selected text, execution plan visualization, and STATISTICS IO/TIME capture
 - **Table Analysis** — per-table tabs for overview, data distribution charts, index details, and missing index recommendations
+  - Three sample sizes available: Small (TOP 1000), Medium (TOP 10000), Full (warns if >500k rows)
 - **Index Insights** — current index structure, seek/scan/lookup usage metrics from DMVs, and SQL Server's missing index suggestions
 - **Column Distribution** — selectivity analysis and data distribution histograms using column statistics
 - **First-run setup wizard** — guides you through configuration on first launch; no manual config files required
@@ -15,6 +38,12 @@ A self-hosted SQL Server analysis tool built with Next.js. Connect to any SQL Se
 ---
 
 ## Running with Docker (recommended)
+
+> **Note:** The Docker image is not yet published. To use this method, build the image locally first:
+> ```bash
+> docker build -t db-insight .
+> ```
+> Then replace `yourdockerhubuser/db-insight` with `db-insight` in the commands below.
 
 ### Quick start
 
@@ -25,16 +54,19 @@ docker run -d \
   yourdockerhubuser/db-insight
 ```
 
-Open [http://localhost:3000](http://localhost:3000). On first visit the setup wizard will appear — it generates a session secret and shows you exactly what will be stored in the mounted volume.
+The `-d` flag runs the container in the background — your terminal is free immediately. Open [http://localhost:3000](http://localhost:3000) and the setup wizard will appear on first visit.
+
+To stop the container:
+
+```bash
+docker stop <container-id>
+```
+
+Get the container ID with `docker ps`.
 
 ### Using Docker Compose
 
-```bash
-curl -O https://raw.githubusercontent.com/yourrepo/db-insight/main/docker-compose.yml
-docker-compose up -d
-```
-
-Or clone the repo and run:
+Clone the repo and run:
 
 ```bash
 docker-compose up -d
@@ -42,45 +74,18 @@ docker-compose up -d
 
 The default `docker-compose.yml` uses a named Docker volume (`db-insight-data`) mapped to `/data` inside the container. All persistent state lives there.
 
-### Configuration
-
-All options are passed as environment variables:
-
-| Variable | Default | Description |
-|---|---|---|
-| `DATA_DIR` | `/data` | Path inside the container where the database, encryption key, and config are stored. Mount a volume here. |
-| `SESSION_SECRET` | _(wizard)_ | Session cookie signing secret. Min 32 characters. If set, the setup wizard is skipped. Generate one with `openssl rand -hex 32`. |
-| `PORT` | `3000` | HTTP port the server listens on. |
-
-**Skipping the setup wizard** (useful for automated deployments):
-
-```yaml
-environment:
-  SESSION_SECRET: "your-secret-here-minimum-32-characters"
-```
-
-### Persistent data
-
-Everything is stored in `DATA_DIR`:
-
-| File | Contents |
-|---|---|
-| `config.json` | Session secret and setup metadata |
-| `editor.db` | Saved connections, editor tabs, query history |
-| `.key` | AES-256-GCM encryption key for stored passwords |
-
-**Updating to a new version:**
+### Updating to a new version
 
 ```bash
 docker-compose pull
 docker-compose up -d
 ```
 
-The volume is independent of the container image — your data, saved connections, and encryption key are preserved across every update. Schema migrations run automatically on startup.
+Your data, saved connections, and encryption key are preserved across every update — the volume is independent of the container image. Schema migrations run automatically on startup.
 
-**Rolling back:**
+### Rolling back
 
-Pin a specific version tag in `docker-compose.yml` to roll back safely:
+Pin a specific version tag in `docker-compose.yml`:
 
 ```yaml
 image: yourdockerhubuser/db-insight:0.1.0
@@ -88,7 +93,7 @@ image: yourdockerhubuser/db-insight:0.1.0
 
 ---
 
-## Running locally (development)
+## Running Locally (development)
 
 ### Prerequisites
 
@@ -119,7 +124,47 @@ npm run start
 
 This also uses `./data/` for storage — the same folder as `npm run dev`, so your saved connections carry over.
 
-## Health check
+---
+
+## Configuration
+
+All options are passed as environment variables (Docker) or via `.env.local` (local dev):
+
+| Variable | Default | Description |
+|---|---|---|
+| `DATA_DIR` | `/data` | Path inside the container where the database, encryption key, and config are stored. Mount a volume here. |
+| `SESSION_SECRET` | _(wizard)_ | Session cookie signing secret. Min 32 characters. If set, the setup wizard is skipped. Generate one with `openssl rand -hex 32`. |
+| `PORT` | `3000` | HTTP port the server listens on. |
+
+**Skipping the setup wizard** (useful for automated deployments):
+
+```yaml
+environment:
+  SESSION_SECRET: "your-secret-here-minimum-32-characters"
+```
+
+### Persistent data
+
+Everything is stored in `DATA_DIR`:
+
+| File | Contents |
+|---|---|
+| `config.json` | Session secret and setup metadata |
+| `editor.db` | Saved connections, editor tabs, query history |
+| `.key` | AES-256-GCM encryption key for stored passwords |
+
+---
+
+## Security Notes
+
+- Credentials are stored in a server-side `Map` keyed by session ID — never serialized into the cookie or sent to the client
+- Saved connection passwords are encrypted with AES-256-GCM before being written to SQLite; the key lives in `DATA_DIR/.key`
+- The iron-session cookie is `httpOnly`, `sameSite: strict`, and `secure` in production
+- This tool is designed for **personal or trusted-network use** — place it behind a reverse proxy with authentication if exposing it more broadly
+
+---
+
+## Health Check
 
 `GET /api/health` returns the current status without authentication:
 
@@ -137,26 +182,22 @@ Useful for Docker Compose health checks, uptime monitors, and reverse proxy prob
 
 ---
 
-## Security notes
+## Troubleshooting
 
-- Credentials are stored in a server-side `Map` keyed by session ID — never serialized into the cookie or sent to the client
-- Saved connection passwords are encrypted with AES-256-GCM before being written to SQLite; the key lives in `DATA_DIR/.key`
-- The iron-session cookie is `httpOnly`, `sameSite: strict`, and `secure` in production
-- This tool is designed for **personal or trusted-network use** — place it behind a reverse proxy with authentication if exposing it more broadly
+**Setup wizard appears on every restart**
+Ensure the data volume is mounted correctly. The wizard re-runs when `config.json` is missing or unreadable. For Docker, confirm your volume mapping with `docker inspect <container>`.
 
----
+**I forgot my SESSION_SECRET / want to reset setup**
+Delete `data/config.json` (or `DATA_DIR/config.json` in Docker) and restart. The setup wizard will re-run and generate a new secret. Existing saved connections are preserved in `editor.db`.
 
-## Sample size strategy
+**Can't connect to SQL Server**
+- Confirm TCP/IP is enabled in SQL Server Configuration Manager
+- Check that port 1433 (or your custom port) is open in the firewall
+- For Azure SQL, verify the server firewall allows your IP address
+- Try `sa` or a SQL auth account first to rule out Windows auth issues in a containerized environment
 
-When querying large tables for analysis, three sample sizes are available:
-
-| Size | Method |
-|---|---|
-| Small | `SELECT TOP 1000 ... WITH (NOLOCK)` |
-| Medium | `SELECT TOP 10000 ... WITH (NOLOCK)` |
-| Full | No TOP limit — warns if row count exceeds 500k |
-
-`TABLESAMPLE` is avoided — it is unreliable on small tables.
+**Query runs slowly / times out**
+Use the Small sample size for initial exploration on large tables. Full scans on tables >500k rows will warn before executing.
 
 ---
 
@@ -176,6 +217,9 @@ When querying large tables for analysis, three sample sizes are available:
 ---
 
 ## Project Structure
+
+<details>
+<summary>Expand (for contributors)</summary>
 
 ```
 src/
@@ -212,3 +256,5 @@ src/
     ├── db.ts                 # executeQuery() helper
     └── sql-queries.ts        # SQL strings
 ```
+
+</details>
