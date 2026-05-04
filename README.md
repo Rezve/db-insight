@@ -12,19 +12,6 @@ A self-hosted SQL Server analysis tool built with Next.js. Connect to any SQL Se
 - **First-run setup wizard** — guides you through configuration on first launch; no manual config files required
 - **Dark mode** support
 
-## Tech Stack
-
-| Layer | Technology |
-|---|---|
-| Framework | Next.js 16 (App Router) + React 19 + TypeScript |
-| Styling | Tailwind CSS v4 + shadcn/ui |
-| Editor | Monaco Editor with SQL autocomplete |
-| Charts | Recharts |
-| Database | mssql v11 (SQL Server / Azure SQL) |
-| Local storage | better-sqlite3 (saved connections, editor tabs, query history) |
-| Session | iron-session (encrypted cookie, server-side pool store) |
-| Encryption | AES-256-GCM (saved connection passwords) |
-
 ---
 
 ## Running with Docker (recommended)
@@ -132,6 +119,60 @@ npm run start
 
 This also uses `./data/` for storage — the same folder as `npm run dev`, so your saved connections carry over.
 
+## Health check
+
+`GET /api/health` returns the current status without authentication:
+
+```json
+{
+  "status": "ok",
+  "appVersion": "0.1.0",
+  "setupComplete": true,
+  "dataDir": "accessible",
+  "timestamp": "2026-05-05T10:00:00.000Z"
+}
+```
+
+Useful for Docker Compose health checks, uptime monitors, and reverse proxy probes.
+
+---
+
+## Security notes
+
+- Credentials are stored in a server-side `Map` keyed by session ID — never serialized into the cookie or sent to the client
+- Saved connection passwords are encrypted with AES-256-GCM before being written to SQLite; the key lives in `DATA_DIR/.key`
+- The iron-session cookie is `httpOnly`, `sameSite: strict`, and `secure` in production
+- This tool is designed for **personal or trusted-network use** — place it behind a reverse proxy with authentication if exposing it more broadly
+
+---
+
+## Sample size strategy
+
+When querying large tables for analysis, three sample sizes are available:
+
+| Size | Method |
+|---|---|
+| Small | `SELECT TOP 1000 ... WITH (NOLOCK)` |
+| Medium | `SELECT TOP 10000 ... WITH (NOLOCK)` |
+| Full | No TOP limit — warns if row count exceeds 500k |
+
+`TABLESAMPLE` is avoided — it is unreliable on small tables.
+
+---
+
+## Tech Stack
+
+| Layer | Technology |
+|---|---|
+| Framework | Next.js 16 (App Router) + React 19 + TypeScript |
+| Styling | Tailwind CSS v4 + shadcn/ui |
+| Editor | Monaco Editor with SQL autocomplete |
+| Charts | Recharts |
+| Database | mssql v11 (SQL Server / Azure SQL) |
+| Local storage | better-sqlite3 (saved connections, editor tabs, query history) |
+| Session | iron-session (encrypted cookie, server-side pool store) |
+| Encryption | AES-256-GCM (saved connection passwords) |
+
 ---
 
 ## Project Structure
@@ -171,44 +212,3 @@ src/
     ├── db.ts                 # executeQuery() helper
     └── sql-queries.ts        # SQL strings
 ```
-
----
-
-## Health check
-
-`GET /api/health` returns the current status without authentication:
-
-```json
-{
-  "status": "ok",
-  "appVersion": "0.1.0",
-  "setupComplete": true,
-  "dataDir": "accessible",
-  "timestamp": "2026-05-05T10:00:00.000Z"
-}
-```
-
-Useful for Docker Compose health checks, uptime monitors, and reverse proxy probes.
-
----
-
-## Security notes
-
-- Credentials are stored in a server-side `Map` keyed by session ID — never serialized into the cookie or sent to the client
-- Saved connection passwords are encrypted with AES-256-GCM before being written to SQLite; the key lives in `DATA_DIR/.key`
-- The iron-session cookie is `httpOnly`, `sameSite: strict`, and `secure` in production
-- This tool is designed for **personal or trusted-network use** — place it behind a reverse proxy with authentication if exposing it more broadly
-
----
-
-## Sample size strategy
-
-When querying large tables for analysis, three sample sizes are available:
-
-| Size | Method |
-|---|---|
-| Small | `SELECT TOP 1000 ... WITH (NOLOCK)` |
-| Medium | `SELECT TOP 10000 ... WITH (NOLOCK)` |
-| Full | No TOP limit — warns if row count exceeds 500k |
-
-`TABLESAMPLE` is avoided — it is unreliable on small tables.
