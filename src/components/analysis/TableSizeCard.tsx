@@ -1,31 +1,24 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { HardDrive } from "lucide-react";
+import { useSessionCacheContext } from "@/contexts/session-cache-context";
+import { useCachedFetch } from "@/hooks/use-cached-fetch";
 
 interface TableSizeCardProps {
   tableName: string;
 }
 
 export default function TableSizeCard({ tableName }: TableSizeCardProps) {
-  const [sizeGB, setSizeGB] = useState<number | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const { enabled } = useSessionCacheContext();
+  const { data, loading, error } = useCachedFetch<{ sizeGB: number }>(
+    `table-size:${tableName}`,
+    `/api/analysis/table-size?table=${encodeURIComponent(tableName)}`,
+    enabled
+  );
 
-  useEffect(() => {
-    setLoading(true);
-    setError(null);
-    fetch(`/api/analysis/table-size?table=${encodeURIComponent(tableName)}`)
-      .then((r) => r.json())
-      .then((data) => {
-        if (data.error) setError(data.error);
-        else setSizeGB(data.sizeGB);
-      })
-      .catch(() => setError("Failed to fetch table size"))
-      .finally(() => setLoading(false));
-  }, [tableName]);
+  const sizeGB = data?.sizeGB ?? null;
 
   function formatSize(gb: number): string {
     if (gb >= 1) return `${gb.toFixed(3)} GB`;

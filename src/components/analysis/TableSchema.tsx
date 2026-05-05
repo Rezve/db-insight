@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useSessionCacheContext } from "@/contexts/session-cache-context";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -76,6 +77,7 @@ function formatDataType(col: TableColumnDetail): string {
 }
 
 export default function TableSchema({ tableName }: TableSchemaProps) {
+  const { enabled, cache, refreshCount } = useSessionCacheContext();
   const [columns, setColumns] = useState<TableColumnDetail[]>([]);
   const [indexes, setIndexes] = useState<IndexInfo[]>([]);
   const [loading, setLoading] = useState(true);
@@ -87,21 +89,43 @@ export default function TableSchema({ tableName }: TableSchemaProps) {
     ? tableName.split(".", 2)
     : ["dbo", tableName];
 
+  const colKey = `columns:${tableName}`;
+  const idxKey = `indexes:${tableName}`;
+
   useEffect(() => {
     setLoading(true);
     setError(null);
+
+    if (enabled) {
+      const cachedCols = cache.current.get(colKey) as { columns: TableColumnDetail[] } | undefined;
+      const cachedIdx = cache.current.get(idxKey) as { indexes: IndexInfo[] } | undefined;
+      if (cachedCols !== undefined && cachedIdx !== undefined) {
+        setColumns(cachedCols.columns ?? []);
+        setIndexes(cachedIdx.indexes ?? []);
+        setLoading(false);
+        return;
+      }
+    }
+
     Promise.all([
       fetch(`/api/analysis/columns?table=${encodeURIComponent(tableName)}`).then((r) => r.json()),
       fetch(`/api/analysis/indexes?table=${encodeURIComponent(tableName)}`).then((r) => r.json()),
     ])
       .then(([colData, idxData]) => {
         if (colData.error) setError(colData.error);
-        else setColumns(colData.columns ?? []);
-        if (!idxData.error) setIndexes(idxData.indexes ?? []);
+        else {
+          if (enabled) cache.current.set(colKey, colData);
+          setColumns(colData.columns ?? []);
+        }
+        if (!idxData.error) {
+          if (enabled) cache.current.set(idxKey, idxData);
+          setIndexes(idxData.indexes ?? []);
+        }
       })
       .catch(() => setError("Failed to load column schema"))
       .finally(() => setLoading(false));
-  }, [tableName]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tableName, enabled, refreshCount]);
 
   function buildFullDDL() {
     const parts = [buildCreateTableDDL(schemaName, tableOnly, columns)];

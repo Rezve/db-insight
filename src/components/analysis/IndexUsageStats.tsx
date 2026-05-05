@@ -1,8 +1,10 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { ArrowUpDown } from "lucide-react";
 import { Trash2 } from "lucide-react";
+import { useSessionCacheContext } from "@/contexts/session-cache-context";
+import { useCachedFetch } from "@/hooks/use-cached-fetch";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -57,27 +59,17 @@ export default function IndexUsageStats({ tableName }: IndexUsageStatsProps) {
   type SortKey = "seeks" | "scans" | "lookups" | "lastActivity";
   type SortDir = "asc" | "desc";
 
-  const [stats, setStats] = useState<IndexUsageStat[]>([]);
-  const [serverStartTime, setServerStartTime] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const { enabled } = useSessionCacheContext();
+  const { data, loading, error } = useCachedFetch<{ usageStats: IndexUsageStat[]; serverStartTime: string | null }>(
+    `index-usage:${tableName}`,
+    `/api/analysis/index-usage?table=${encodeURIComponent(tableName)}`,
+    enabled
+  );
+  const stats = data?.usageStats ?? [];
+  const serverStartTime = data?.serverStartTime ?? null;
+
   const [sortKey, setSortKey] = useState<SortKey | null>(null);
   const [sortDir, setSortDir] = useState<SortDir>("desc");
-
-  useEffect(() => {
-    setLoading(true);
-    fetch(`/api/analysis/index-usage?table=${encodeURIComponent(tableName)}`)
-      .then((r) => r.json())
-      .then((data) => {
-        if (data.error) setError(data.error);
-        else {
-          setStats(data.usageStats ?? []);
-          setServerStartTime(data.serverStartTime ?? null);
-        }
-      })
-      .catch(() => setError("Failed to load index usage"))
-      .finally(() => setLoading(false));
-  }, [tableName]);
 
   const sorted = useMemo(() => {
     if (sortKey === null) return stats;

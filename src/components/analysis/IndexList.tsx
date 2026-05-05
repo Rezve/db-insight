@@ -2,6 +2,8 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { ArrowUpDown } from "lucide-react";
+import { useSessionCacheContext } from "@/contexts/session-cache-context";
+import { useCachedFetch } from "@/hooks/use-cached-fetch";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -20,9 +22,13 @@ interface IndexListProps {
 }
 
 export default function IndexList({ tableName }: IndexListProps) {
-  const [indexes, setIndexes] = useState<IndexInfo[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const { enabled } = useSessionCacheContext();
+  const { data, loading, error } = useCachedFetch<{ indexes: IndexInfo[] }>(
+    `indexes:${tableName}`,
+    `/api/analysis/indexes?table=${encodeURIComponent(tableName)}`,
+    enabled
+  );
+  const indexes = data?.indexes ?? [];
 
   type SortKey = "name" | "size" | "type" | "properties";
   type SortDir = "asc" | "desc";
@@ -68,18 +74,6 @@ export default function IndexList({ tableName }: IndexListProps) {
       return sortDir === "asc" ? cmp : -cmp;
     });
   }, [indexes, sortKey, sortDir]);
-
-  useEffect(() => {
-    setLoading(true);
-    fetch(`/api/analysis/indexes?table=${encodeURIComponent(tableName)}`)
-      .then((r) => r.json())
-      .then((data) => {
-        if (data.error) setError(data.error);
-        else setIndexes(data.indexes ?? []);
-      })
-      .catch(() => setError("Failed to load index info"))
-      .finally(() => setLoading(false));
-  }, [tableName]);
 
   if (loading) return <Skeleton className="h-40 w-full" />;
   if (error) return <p className="text-destructive text-sm">{error}</p>;

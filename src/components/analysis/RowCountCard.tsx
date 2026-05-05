@@ -1,9 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Rows3 } from "lucide-react";
+import { useSessionCacheContext } from "@/contexts/session-cache-context";
+import { useCachedFetch } from "@/hooks/use-cached-fetch";
 
 interface RowCountCardProps {
   tableName: string;
@@ -11,28 +13,19 @@ interface RowCountCardProps {
 }
 
 export default function RowCountCard({ tableName, onRowCount }: RowCountCardProps) {
-  const [rowCount, setRowCount] = useState<number | null>(null);
-  const [source, setSource] = useState<string>("");
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const { enabled } = useSessionCacheContext();
+  const { data, loading, error } = useCachedFetch<{ rowCount: number; source: string }>(
+    `row-count:${tableName}`,
+    `/api/analysis/row-count?table=${encodeURIComponent(tableName)}`,
+    enabled
+  );
+
+  const rowCount = data?.rowCount ?? null;
+  const source = data?.source ?? "";
 
   useEffect(() => {
-    setLoading(true);
-    setError(null);
-    fetch(`/api/analysis/row-count?table=${encodeURIComponent(tableName)}`)
-      .then((r) => r.json())
-      .then((data) => {
-        if (data.error) {
-          setError(data.error);
-        } else {
-          setRowCount(data.rowCount);
-          setSource(data.source);
-          onRowCount?.(data.rowCount);
-        }
-      })
-      .catch(() => setError("Failed to fetch row count"))
-      .finally(() => setLoading(false));
-  }, [tableName, onRowCount]);
+    if (data?.rowCount != null) onRowCount?.(data.rowCount);
+  }, [data, onRowCount]);
 
   return (
     <Card className="w-full max-w-xs">

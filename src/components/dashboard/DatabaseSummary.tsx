@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useSessionCacheContext } from "@/contexts/session-cache-context";
+import { useCachedFetch } from "@/hooks/use-cached-fetch";
 import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -77,18 +78,12 @@ function StatCardSkeleton() {
 }
 
 export default function DatabaseSummary() {
-  const [data, setData] = useState<DatabaseSummary | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    fetch("/api/summary")
-      .then((r) => r.json())
-      .then((json) => {
-        if (json.error) setError(json.error);
-        else setData(json as DatabaseSummary);
-      })
-      .catch((e) => setError(e.message));
-  }, []);
+  const { enabled } = useSessionCacheContext();
+  const { data, loading: _loading, error } = useCachedFetch<DatabaseSummary>(
+    "summary:db",
+    "/api/summary",
+    enabled
+  );
 
   if (error) {
     return (

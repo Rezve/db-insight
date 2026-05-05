@@ -1,9 +1,10 @@
 "use client";
 
 import { useTheme } from "next-themes";
-import { Sun, Moon, Monitor, Minus, Plus } from "lucide-react";
+import { Sun, Moon, Monitor, Minus, Plus, Database } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useEditorFontSize } from "@/hooks/use-editor-font-size";
+import { useSessionCacheContext } from "@/contexts/session-cache-context";
 
 const themeOptions = [
   { value: "light", label: "Light", icon: Sun },
@@ -14,6 +15,7 @@ const themeOptions = [
 export default function SettingsPage() {
   const { theme, setTheme } = useTheme();
   const { fontSize, setFontSize, min, max } = useEditorFontSize();
+  const { enabled, setEnabled } = useSessionCacheContext();
 
   return (
     <div className="p-6 max-w-lg">
@@ -83,6 +85,30 @@ export default function SettingsPage() {
             <Plus className="h-4 w-4" />
           </button>
         </div>
+      </section>
+
+      <section className="mt-8">
+        <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground mb-1">
+          Session Cache
+        </h2>
+        <p className="text-sm text-muted-foreground mb-3">
+          Cache table schema, index info, and stats in memory for this browser session.
+          Speeds up navigation between tables — data loads instantly on revisit instead of
+          fetching from the database each time. Use the sync icon in the header to reload
+          fresh data at any time. Disable this when actively making schema changes.
+        </p>
+        <button
+          onClick={() => setEnabled(!enabled)}
+          className={cn(
+            "flex items-center gap-2 rounded-md px-3 py-2 text-sm border transition-colors",
+            enabled
+              ? "bg-primary/10 text-primary border-primary/30 font-medium"
+              : "text-zinc-600 dark:text-zinc-400 border-transparent hover:bg-zinc-100 dark:hover:bg-zinc-800"
+          )}
+        >
+          <Database className="h-4 w-4" />
+          {enabled ? "Enabled" : "Disabled"}
+        </button>
       </section>
     </div>
   );

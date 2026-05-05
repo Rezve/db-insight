@@ -1,6 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
+import { useSessionCacheContext } from "@/contexts/session-cache-context";
+import { useCachedFetch } from "@/hooks/use-cached-fetch";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -26,22 +28,14 @@ function ImpactBar({ value }: { value: number }) {
 }
 
 export default function MissingIndexes({ tableName }: MissingIndexesProps) {
-  const [suggestions, setSuggestions] = useState<MissingIndex[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const { enabled } = useSessionCacheContext();
+  const { data, loading, error } = useCachedFetch<{ suggestions: MissingIndex[] }>(
+    `missing-indexes:${tableName}`,
+    `/api/analysis/missing-indexes?table=${encodeURIComponent(tableName)}`,
+    enabled
+  );
+  const suggestions = data?.suggestions ?? [];
   const [expandedDDL, setExpandedDDL] = useState<number | null>(null);
-
-  useEffect(() => {
-    setLoading(true);
-    fetch(`/api/analysis/missing-indexes?table=${encodeURIComponent(tableName)}`)
-      .then((r) => r.json())
-      .then((data) => {
-        if (data.error) setError(data.error);
-        else setSuggestions(data.suggestions ?? []);
-      })
-      .catch(() => setError("Failed to load missing index data"))
-      .finally(() => setLoading(false));
-  }, [tableName]);
 
   if (loading) return <Skeleton className="h-40 w-full" />;
   if (error) return <p className="text-destructive text-sm">{error}</p>;

@@ -5,7 +5,8 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { LogOut, Database, Loader2 } from "lucide-react";
+import { LogOut, Database, Loader2, RefreshCw } from "lucide-react";
+import { useSessionCacheContext } from "@/contexts/session-cache-context";
 
 interface HeaderProps {
   serverName: string;
@@ -30,9 +31,11 @@ function formatServerName(name: string): string {
 export default function Header({ serverName, databaseName }: HeaderProps) {
   const router = useRouter();
   const [disconnecting, setDisconnecting] = useState(false);
+  const { enabled, invalidate } = useSessionCacheContext();
 
   async function handleDisconnect() {
     setDisconnecting(true);
+    invalidate();
     try {
       await fetch("/api/disconnect", { method: "POST" });
       toast.success("Disconnected");
@@ -55,6 +58,17 @@ export default function Header({ serverName, databaseName }: HeaderProps) {
           {databaseName}
         </Badge>
       </div>
+      {enabled && (
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={invalidate}
+          className="h-6 w-6 p-0 text-muted-foreground hover:text-primary"
+          title="Sync — refresh all cached data"
+        >
+          <RefreshCw className="h-3.5 w-3.5" />
+        </Button>
+      )}
       <Button
         variant="ghost"
         size="sm"
