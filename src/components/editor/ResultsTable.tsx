@@ -9,7 +9,8 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { AlertCircle, Save, X, Loader2 } from "lucide-react";
+import { AlertCircle, Save, X, Loader2, Copy, Check } from "lucide-react";
+import { toast } from "sonner";
 
 interface Column {
   name: string;
@@ -42,6 +43,25 @@ interface IndexInfo {
   isUnique: boolean;
   isDisabled: boolean;
   columns: IndexColumn[];
+}
+
+function CopyButton({ value }: { value: string }) {
+  const [copied, setCopied] = useState(false);
+  function handleCopy(e: React.MouseEvent) {
+    e.stopPropagation();
+    navigator.clipboard.writeText(value);
+    toast.success("Copied to clipboard");
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }
+  return (
+    <button
+      onClick={handleCopy}
+      className="ml-2 shrink-0 text-background/50 hover:text-background transition-colors"
+    >
+      {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+    </button>
+  );
 }
 
 function ColHeader({ col }: { col: Column }) {
@@ -314,6 +334,10 @@ export default function ResultsTable({ result, loading, resultSql }: ResultsTabl
                       const isEditing =
                         editingCell?.row === rowIdx && editingCell?.col === col.name;
 
+                      const tooltipValue = hasPendingEdit
+                        ? (pendingVal !== undefined ? String(pendingVal) : null)
+                        : display;
+
                       return (
                         <td
                           key={col.name}
@@ -324,7 +348,6 @@ export default function ResultsTable({ result, loading, resultSql }: ResultsTabl
                               : "",
                             editable && !isEditing ? "cursor-text" : "",
                           ].join(" ")}
-                          title={!isEditing ? (hasPendingEdit ? String(pendingVal) : display ?? "") : undefined}
                           onDoubleClick={() => {
                             if (editable) setEditingCell({ row: rowIdx, col: col.name });
                           }}
@@ -340,12 +363,18 @@ export default function ResultsTable({ result, loading, resultSql }: ResultsTabl
                                 if (e.key === "Escape") setEditingCell(null);
                               }}
                             />
-                          ) : hasPendingEdit ? (
-                            <span className="truncate block">{pendingVal ?? <span className="text-muted-foreground italic">NULL</span>}</span>
-                          ) : display === null ? (
-                            <span className="text-muted-foreground italic">NULL</span>
+                          ) : tooltipValue !== null ? (
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <span className="truncate block">{tooltipValue}</span>
+                              </TooltipTrigger>
+                              <TooltipContent className="flex items-start max-w-xs">
+                                <span className="break-words whitespace-pre-wrap">{tooltipValue}</span>
+                                <CopyButton value={tooltipValue} />
+                              </TooltipContent>
+                            </Tooltip>
                           ) : (
-                            <span className="truncate block">{display}</span>
+                            <span className="text-muted-foreground italic">NULL</span>
                           )}
                         </td>
                       );
