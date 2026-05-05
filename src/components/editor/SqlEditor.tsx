@@ -241,6 +241,8 @@ export default function SqlEditor({
   useEffect(() => {
     if (prevTabId.current !== tabId && editorRef.current) {
       editorRef.current.setValue(sql);
+      const lineCount = editorRef.current.getModel()?.getLineCount() ?? 1;
+      editorRef.current.revealLine(lineCount);
       prevTabId.current = tabId;
     }
   }, [tabId, sql]);
@@ -524,6 +526,9 @@ export default function SqlEditor({
     editorRef.current = editorInstance;
     monacoRef.current = monacoInstance;
     registerProviders(monacoInstance);
+
+    const initialLineCount = editorInstance.getModel()?.getLineCount() ?? 1;
+    editorInstance.revealLine(initialLineCount);
 
     // Decorate known table names and navigate on Ctrl+Click
     const tableDecorations = editorInstance.createDecorationsCollection([]);
