@@ -3,6 +3,12 @@
 import { useMemo, useState } from "react";
 import { AlertCircle, Info, Lightbulb, Copy, Check } from "lucide-react";
 import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import {
   parsePlanXml,
   collectPostOrder,
   describeNode,
@@ -172,17 +178,50 @@ export default function QueryPlanText({ planXml }: QueryPlanTextProps) {
                       <span className="text-[11px] font-mono text-muted-foreground">
                         {Math.round(node.estimateRows).toLocaleString()} rows
                       </span>
-                      <span
-                        className={`text-[11px] font-mono font-medium ${
-                          node.costPercent > 50
-                            ? "text-red-600 dark:text-red-400"
-                            : node.costPercent > 20
-                            ? "text-amber-600 dark:text-amber-400"
-                            : "text-muted-foreground"
-                        }`}
-                      >
-                        {node.costPercent.toFixed(1)}%
-                      </span>
+                      <TooltipProvider>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <span
+                              className={`text-[11px] font-mono font-medium cursor-default ${
+                                node.costPercent > 50
+                                  ? "text-red-600 dark:text-red-400"
+                                  : node.costPercent > 20
+                                  ? "text-amber-600 dark:text-amber-400"
+                                  : "text-muted-foreground"
+                              }`}
+                            >
+                              {node.costPercent.toFixed(1)}%
+                            </span>
+                          </TooltipTrigger>
+                          <TooltipContent side="left" className="max-w-[240px] text-xs space-y-1.5">
+                            <p>
+                              <strong>{node.costPercent.toFixed(1)}%</strong> of
+                              the total query cost flows through this step and
+                              everything beneath it.
+                            </p>
+                            <p className="text-muted-foreground">
+                              Percentages don&apos;t add up to 100% — parent
+                              steps include their children&apos;s cost, so
+                              numbers naturally overlap.
+                            </p>
+                            {node.costPercent > 50 ? (
+                              <p className="text-red-400">
+                                High share — this subtree is the dominant cost
+                                driver. Focus optimization here first.
+                              </p>
+                            ) : node.costPercent > 20 ? (
+                              <p className="text-amber-400">
+                                Moderate share — worth checking indexes or join
+                                order for this subtree.
+                              </p>
+                            ) : (
+                              <p className="text-muted-foreground">
+                                Low share — unlikely to be a bottleneck.
+                              </p>
+                            )}
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
                     </div>
                   </div>
 
