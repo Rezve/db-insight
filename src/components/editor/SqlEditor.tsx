@@ -10,7 +10,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { Play, Clock, BarChart2, GitBranch, GitCompare, Pin, PinOff, WandSparkles, X } from "lucide-react";
+import { Play, Clock, BarChart2, Network, GitCompare, Pin, PinOff, WandSparkles, X, Check } from "lucide-react";
 import { format as formatSql } from "sql-formatter";
 import ResultsTable from "./ResultsTable";
 import StatisticsPanel from "./StatisticsPanel";
@@ -67,8 +67,8 @@ interface SqlEditorProps {
   onRunningChange: (running: boolean) => void;
   statsEnabled: boolean;
   onStatsEnabledChange: (v: boolean) => void;
-  planEnabled: boolean;
-  onPlanEnabledChange: (v: boolean) => void;
+  planMode: "off" | "actual" | "estimated";
+  onPlanModeChange: (v: "off" | "actual" | "estimated") => void;
   compareEnabled: boolean;
   onCompareEnabledChange: (v: boolean) => void;
   activeResultTab: string;
@@ -131,6 +131,88 @@ function extractTableNameTokens(
   return results;
 }
 
+const PLAN_OPTIONS = [
+  { value: "off" as const, label: "Off", description: "No plan captured" },
+  { value: "actual" as const, label: "Actual Plan", description: "Executes query · returns data + plan" },
+  { value: "estimated" as const, label: "Estimated Plan", description: "Shows plan without executing" },
+];
+
+function PlanModeSelector({
+  planMode,
+  onPlanModeChange,
+}: {
+  planMode: "off" | "actual" | "estimated";
+  onPlanModeChange: (v: "off" | "actual" | "estimated") => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDocClick = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    const onEsc = (e: KeyboardEvent) => { if (e.key === "Escape") setOpen(false); };
+    document.addEventListener("mousedown", onDocClick);
+    document.addEventListener("keydown", onEsc);
+    return () => {
+      document.removeEventListener("mousedown", onDocClick);
+      document.removeEventListener("keydown", onEsc);
+    };
+  }, [open]);
+
+  return (
+    <div className="relative" ref={ref}>
+      <Button
+        size="sm"
+        variant="ghost"
+        onClick={() => setOpen((v) => !v)}
+        className={`h-7 w-7 p-0 hover:ring-1 hover:ring-border ${
+          planMode === "actual"
+            ? "bg-accent text-accent-foreground"
+            : planMode === "estimated"
+            ? "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400"
+            : ""
+        }`}
+        title="Query Plan"
+      >
+        <Network className="h-3.5 w-3.5" />
+      </Button>
+      {open && (
+        <div
+          className="absolute left-0 top-8 z-50 w-60 rounded-lg border bg-popover text-popover-foreground shadow-lg p-1"
+          role="menu"
+        >
+          <p className="px-2 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+            Query Plan
+          </p>
+          {PLAN_OPTIONS.map((opt) => (
+            <button
+              key={opt.value}
+              role="menuitemradio"
+              aria-checked={planMode === opt.value}
+              className={`w-full flex items-start gap-2 rounded px-2 py-1.5 text-left transition-colors hover:bg-accent ${
+                planMode === opt.value ? "bg-accent/60" : ""
+              }`}
+              onClick={() => { onPlanModeChange(opt.value); setOpen(false); }}
+            >
+              <Check
+                className={`mt-0.5 h-3.5 w-3.5 shrink-0 text-primary transition-opacity ${
+                  planMode === opt.value ? "opacity-100" : "opacity-0"
+                }`}
+              />
+              <div>
+                <p className="text-xs font-medium leading-tight">{opt.label}</p>
+                <p className="text-[11px] text-muted-foreground leading-tight mt-0.5">{opt.description}</p>
+              </div>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function SqlEditor({
   tabId,
   sql,
@@ -148,8 +230,8 @@ export default function SqlEditor({
   onRunningChange,
   statsEnabled,
   onStatsEnabledChange,
-  planEnabled,
-  onPlanEnabledChange,
+  planMode,
+  onPlanModeChange,
   compareEnabled,
   onCompareEnabledChange,
   activeResultTab,
@@ -799,10 +881,11 @@ export default function SqlEditor({
       prefixParts.push("SET STATISTICS IO ON;", "SET STATISTICS TIME ON;");
       suffixParts.unshift("SET STATISTICS IO OFF;", "SET STATISTICS TIME OFF;");
     }
-    if (planEnabled) {
+    if (planMode === "actual") {
       prefixParts.push("SET STATISTICS XML ON;");
       suffixParts.unshift("SET STATISTICS XML OFF;");
     }
+    // Estimated plan: server handles SET SHOWPLAN_XML ON/OFF as separate batches
     const sqlText =
       prefixParts.length > 0
         ? `${prefixParts.join("\n")}\n${rawSql}\n${suffixParts.join("\n")}`
@@ -819,7 +902,7 @@ export default function SqlEditor({
       const res = await fetch("/api/query", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sql: sqlText, planEnabled }),
+        body: JSON.stringify({ sql: sqlText, planMode }),
         signal: controller.signal,
       });
       const data = await res.json();
@@ -951,22 +1034,14 @@ export default function SqlEditor({
         >
           <BarChart2 className="h-3.5 w-3.5" />
         </Button>
-        <Button
-          size="sm"
-          variant="ghost"
-          onClick={() => onPlanEnabledChange(!planEnabled)}
-          className={`h-7 w-7 p-0 hover:ring-1 hover:ring-border ${planEnabled ? "bg-accent text-accent-foreground" : ""}`}
-          title={planEnabled ? "Query Plan ON — click to disable" : "Enable execution plan capture"}
-        >
-          <GitBranch className="h-3.5 w-3.5" />
-        </Button>
+        <PlanModeSelector planMode={planMode} onPlanModeChange={onPlanModeChange} />
         <Button
           size="sm"
           variant="ghost"
           onClick={() => {
             const next = !compareEnabled;
             onCompareEnabledChange(next);
-            if (next && !statsEnabled && !planEnabled) {
+            if (next && !statsEnabled && planMode === "off") {
               toast.info("Tip: enable Statistics and Query Plan for richer comparisons.");
             }
           }}
@@ -1072,7 +1147,7 @@ export default function SqlEditor({
             Visual Plan
             {result?.planXml ? (
               <Badge variant="secondary" className="text-[10px] px-1 py-0 h-4 min-w-4">
-                <GitBranch className="h-2.5 w-2.5" />
+                <Network className="h-2.5 w-2.5" />
               </Badge>
             ) : null}
           </TabsTrigger>

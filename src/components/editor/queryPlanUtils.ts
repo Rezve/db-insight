@@ -390,6 +390,75 @@ export function describeNode(node: PlanNode): string {
   return `Executes ${physicalOp} (logical: ${logicalOp}). Expected ${rowEst} row${estimateRows !== 1 ? "s" : ""} at ${node.costPercent.toFixed(1)}% of total plan cost.`;
 }
 
+// ── Missing Index Hints ───────────────────────────────────────────────────────
+
+export interface MissingIndexHint {
+  impact: number;
+  database: string;
+  schema: string;
+  table: string;
+  equalityColumns: string[];
+  inequalityColumns: string[];
+  includeColumns: string[];
+}
+
+export function parseMissingIndexes(xml: string): MissingIndexHint[] {
+  if (!xml?.trim()) return [];
+  try {
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(xml, "text/xml");
+    if (doc.querySelector("parsererror")) return [];
+
+    const hints: MissingIndexHint[] = [];
+    const groups = doc.getElementsByTagName("MissingIndexGroup");
+
+    for (const group of Array.from(groups)) {
+      const impact = parseFloat(group.getAttribute("Impact") ?? "0");
+      const missingIndexEls = group.getElementsByTagName("MissingIndex");
+      if (!missingIndexEls.length) continue;
+      const mi = missingIndexEls[0];
+
+      const database = mi.getAttribute("Database")?.replace(/\[|\]/g, "") ?? "";
+      const schema = mi.getAttribute("Schema")?.replace(/\[|\]/g, "") ?? "dbo";
+      const table = mi.getAttribute("Table")?.replace(/\[|\]/g, "") ?? "";
+
+      const equalityColumns: string[] = [];
+      const inequalityColumns: string[] = [];
+      const includeColumns: string[] = [];
+
+      for (const cg of Array.from(mi.getElementsByTagName("ColumnGroup"))) {
+        const usage = cg.getAttribute("Usage");
+        const cols = Array.from(cg.getElementsByTagName("Column"))
+          .map((c) => c.getAttribute("Name")?.replace(/\[|\]/g, "") ?? "")
+          .filter(Boolean);
+        if (usage === "EQUALITY") equalityColumns.push(...cols);
+        else if (usage === "INEQUALITY") inequalityColumns.push(...cols);
+        else if (usage === "INCLUDE") includeColumns.push(...cols);
+      }
+
+      hints.push({ impact, database, schema, table, equalityColumns, inequalityColumns, includeColumns });
+    }
+
+    hints.sort((a, b) => b.impact - a.impact);
+    return hints;
+  } catch {
+    return [];
+  }
+}
+
+export function generateMissingIndexSql(hint: MissingIndexHint): string {
+  const keyCols = [...hint.equalityColumns, ...hint.inequalityColumns]
+    .map((c) => `[${c}]`)
+    .join(", ");
+  const includePart =
+    hint.includeColumns.length > 0
+      ? `\nINCLUDE (${hint.includeColumns.map((c) => `[${c}]`).join(", ")})`
+      : "";
+  const namePart = [...hint.equalityColumns, ...hint.inequalityColumns].join("_");
+  const indexName = `IX_${hint.table}_${namePart}`.slice(0, 128);
+  return `CREATE NONCLUSTERED INDEX [${indexName}]\nON [${hint.schema}].[${hint.table}] (${keyCols})${includePart};`;
+}
+
 export function isWarningNode(node: PlanNode): boolean {
   const op = node.physicalOp.toLowerCase();
   return (

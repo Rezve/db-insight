@@ -18,6 +18,7 @@ interface QueryResult {
 }
 
 type ResultTabName = "results" | "statistics" | "visualPlan" | "planText" | "compare";
+type PlanMode = "off" | "actual" | "estimated";
 
 interface TabState {
   id: string;
@@ -32,7 +33,7 @@ interface TabState {
   running: boolean;
   activeResultTab: ResultTabName;
   statsEnabled: boolean;
-  planEnabled: boolean;
+  planMode: PlanMode;
   compareEnabled: boolean;
 }
 
@@ -64,7 +65,7 @@ function createTab(existingTabs: { name: string }[], name?: string, sql?: string
     running: false,
     activeResultTab: "results",
     statsEnabled: false,
-    planEnabled: false,
+    planMode: "off" as PlanMode,
     compareEnabled: false,
   };
 }
@@ -98,7 +99,7 @@ export default function EditorTabsManager() {
             running: false,
             activeResultTab: "results" as ResultTabName,
             statsEnabled: false,
-            planEnabled: false,
+            planMode: "off" as PlanMode,
             compareEnabled: false,
           }));
           setTabs(restored);
@@ -314,8 +315,8 @@ export default function EditorTabsManager() {
           onRunningChange={(running) => updateTab(activeTab.id, { running })}
           statsEnabled={activeTab.statsEnabled}
           onStatsEnabledChange={(statsEnabled) => updateTab(activeTab.id, { statsEnabled })}
-          planEnabled={activeTab.planEnabled}
-          onPlanEnabledChange={(planEnabled) => updateTab(activeTab.id, { planEnabled })}
+          planMode={activeTab.planMode}
+          onPlanModeChange={(planMode) => updateTab(activeTab.id, { planMode })}
           compareEnabled={activeTab.compareEnabled}
           onCompareEnabledChange={(compareEnabled) =>
             updateTab(activeTab.id, {

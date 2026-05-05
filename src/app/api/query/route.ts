@@ -10,10 +10,10 @@ export async function POST(req: NextRequest) {
     }
 
     const body = await req.json();
-    const { sql, maxRows = 1000, planEnabled = false } = body as {
+    const { sql, maxRows = 1000, planMode = "off" } = body as {
       sql: string;
       maxRows?: number;
-      planEnabled?: boolean;
+      planMode?: "off" | "actual" | "estimated";
     };
 
     if (!sql || typeof sql !== "string") {
@@ -24,6 +24,62 @@ export async function POST(req: NextRequest) {
     const start = Date.now();
 
     const statistics: string[] = [];
+
+    function extractPlanXml(row: Record<string, unknown>): string | undefined {
+      const key = Object.keys(row).find(
+        (k) => k.toLowerCase().includes("showplan") || k.toLowerCase().includes("xml")
+      );
+      return key && typeof row[key] === "string" ? (row[key] as string) : undefined;
+    }
+
+    // Estimated plan: SET SHOWPLAN_XML must be the only statement in its batch,
+    // so we make three sequential requests on the same pool connection.
+    if (planMode === "estimated") {
+      try {
+        await pool.request().query("SET SHOWPLAN_XML ON");
+
+        const planRequest = pool.request();
+        planRequest.on("info", (info: { message: string }) => {
+          if (info.message?.trim()) statistics.push(info.message);
+        });
+        const planResult = await planRequest.query(sql);
+        const durationMs = Date.now() - start;
+
+        await pool.request().query("SET SHOWPLAN_XML OFF");
+
+        const allRecordsets = Array.isArray(planResult.recordsets)
+          ? (planResult.recordsets as Record<string, unknown>[][])
+          : [];
+
+        let planXml: string | undefined;
+        for (const rs of allRecordsets) {
+          if (rs?.length >= 1) {
+            planXml = extractPlanXml(rs[0] as Record<string, unknown>);
+            if (planXml) break;
+          }
+        }
+
+        return NextResponse.json({
+          columns: [],
+          rows: [],
+          rowCount: 0,
+          durationMs,
+          truncated: false,
+          rowsAffected: [],
+          statistics,
+          planXml,
+        });
+      } catch (queryErr) {
+        // Always turn SHOWPLAN_XML back off so the connection is reusable
+        try { await pool.request().query("SET SHOWPLAN_XML OFF"); } catch {}
+        const durationMs = Date.now() - start;
+        const err = queryErr as Error & { lineNumber?: number };
+        return NextResponse.json(
+          { error: err.message, lineNumber: err.lineNumber, durationMs, statistics },
+          { status: 400 }
+        );
+      }
+    }
 
     try {
       const request = pool.request();
@@ -38,9 +94,11 @@ export async function POST(req: NextRequest) {
         ? (result.recordsets as Record<string, unknown>[][])
         : [];
 
-      // When planEnabled, actual query results are in recordsets[0]; plan XML is in the last.
+      const isActualPlan = planMode === "actual";
+
+      // Actual plan: data in recordsets[0], plan XML in last recordset.
       const firstRecordset: Record<string, unknown>[] =
-        planEnabled && allRecordsets.length > 0
+        isActualPlan && allRecordsets.length > 0
           ? allRecordsets[0]
           : (result.recordset as Record<string, unknown>[]) ?? [];
 
@@ -48,33 +106,22 @@ export async function POST(req: NextRequest) {
       const truncated = recordset.length > maxRows;
       const rows = truncated ? recordset.slice(0, maxRows) : recordset;
 
-      // Infer column names from first recordset's columns metadata
-      const columns =
-        result.recordset?.columns
-          ? Object.entries(result.recordset.columns).map(([name, meta]) => ({
-              name,
-              dataType:
-                (meta as { type?: { declaration?: string } }).type
-                  ?.declaration ?? "unknown",
-            }))
-          : rows.length > 0
-          ? Object.keys(rows[0]).map((name) => ({ name, dataType: "unknown" }))
-          : [];
+      const columns = result.recordset?.columns
+        ? Object.entries(result.recordset.columns).map(([name, meta]) => ({
+            name,
+            dataType:
+              (meta as { type?: { declaration?: string } }).type
+                ?.declaration ?? "unknown",
+          }))
+        : rows.length > 0
+        ? Object.keys(rows[0]).map((name) => ({ name, dataType: "unknown" }))
+        : [];
 
-      // Extract plan XML from last recordset when plan is enabled
       let planXml: string | undefined;
-      if (planEnabled && allRecordsets.length > 1) {
+      if (isActualPlan && allRecordsets.length > 1) {
         const lastRecordset = allRecordsets[allRecordsets.length - 1];
         if (lastRecordset?.length === 1) {
-          const planRow = lastRecordset[0] as Record<string, unknown>;
-          const planKey = Object.keys(planRow).find(
-            (k) =>
-              k.toLowerCase().includes("showplan") ||
-              k.toLowerCase().includes("xml")
-          );
-          if (planKey && typeof planRow[planKey] === "string") {
-            planXml = planRow[planKey] as string;
-          }
+          planXml = extractPlanXml(lastRecordset[0] as Record<string, unknown>);
         }
       }
 
@@ -100,8 +147,6 @@ export async function POST(req: NextRequest) {
         },
         { status: 400 }
       );
-    } finally {
-      // request is local — no listener cleanup needed
     }
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unexpected error";
