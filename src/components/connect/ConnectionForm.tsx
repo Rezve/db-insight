@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, Database, ChevronRight, ArrowLeft, Check, Server, KeyRound, Monitor } from "lucide-react";
+import { Loader2, Database, ChevronRight, ChevronDown, ChevronUp, ArrowLeft, Check, Server, KeyRound, Monitor } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { AuthMode, DbEngine } from "@/lib/mssql-config";
 import { SaveConnectionPromptModal } from "./SaveConnectionPromptModal";
@@ -40,6 +40,8 @@ export default function ConnectionForm() {
   const [filter, setFilter] = useState("");
   const [showSavePrompt, setShowSavePrompt] = useState(false);
   const [promptData, setPromptData] = useState<{ serverName: string; databaseName: string } | null>(null);
+  const [savedCount, setSavedCount] = useState<number | null>(null);
+  const [manualExpanded, setManualExpanded] = useState(false);
 
   const [creds, setCreds] = useState<Credentials>({
     engine: "sqlserver",
@@ -239,18 +241,39 @@ export default function ConnectionForm() {
         {step === "credentials" ? (
           <div className="space-y-4">
             {/* Saved Connections Quick Access */}
-            <SavedConnectionsList onSelect={handleConnectFromSaved} isLoading={loading} />
+            <SavedConnectionsList
+              onSelect={handleConnectFromSaved}
+              isLoading={loading}
+              onLoaded={(count) => {
+                setSavedCount(count);
+                if (count === 0) setManualExpanded(true);
+              }}
+            />
 
-            <div className="relative">
-              <div className="absolute inset-0 flex items-center">
-                <div className="w-full border-t border-gray-300 dark:border-gray-700" />
-              </div>
-              <div className="relative flex justify-center text-xs uppercase">
-                <span className="bg-white dark:bg-zinc-950 px-2 text-gray-500">or enter manually</span>
-              </div>
-            </div>
+            {/* Manual connection toggle / divider */}
+            {savedCount !== null && savedCount > 0 && (
+              <button
+                type="button"
+                onClick={() => setManualExpanded((v) => !v)}
+                className="flex w-full items-center justify-between rounded-md border border-dashed border-gray-300 dark:border-gray-700 px-3 py-2 text-sm text-gray-500 dark:text-gray-400 hover:border-gray-400 dark:hover:border-gray-500 hover:text-gray-700 dark:hover:text-gray-300 transition-colors"
+              >
+                <span>Connect to a different server</span>
+                {manualExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+              </button>
+            )}
 
-            <form onSubmit={handleFetchDatabases} className="space-y-4">
+            {manualExpanded && savedCount !== null && savedCount > 0 && (
+              <div className="relative">
+                <div className="absolute inset-0 flex items-center">
+                  <div className="w-full border-t border-gray-300 dark:border-gray-700" />
+                </div>
+                <div className="relative flex justify-center text-xs uppercase">
+                  <span className="bg-white dark:bg-zinc-950 px-2 text-gray-500">enter manually</span>
+                </div>
+              </div>
+            )}
+
+            {manualExpanded && <form onSubmit={handleFetchDatabases} className="space-y-4">
               {/* Engine selector */}
             <div className="space-y-1.5">
               <Label>Database Engine</Label>
@@ -397,7 +420,7 @@ export default function ConnectionForm() {
             <p className="text-xs text-center text-muted-foreground">
               Your password is AES-256 encrypted and saved to a local database so you can reconnect in one click — it never leaves your machine.
             </p>
-            </form>
+            </form>}
             </div>
         ) : (
           <div className="space-y-4">

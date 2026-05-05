@@ -19,9 +19,10 @@ interface SavedConnection {
 interface SavedConnectionsListProps {
   onSelect: (id: string) => void;
   isLoading?: boolean;
+  onLoaded?: (count: number) => void;
 }
 
-export function SavedConnectionsList({ onSelect, isLoading }: SavedConnectionsListProps) {
+export function SavedConnectionsList({ onSelect, isLoading, onLoaded }: SavedConnectionsListProps) {
   const [connections, setConnections] = useState<SavedConnection[]>([]);
   const [error, setError] = useState<string>("");
   const [loading, setLoading] = useState(true);
@@ -33,9 +34,12 @@ export function SavedConnectionsList({ onSelect, isLoading }: SavedConnectionsLi
         const res = await fetch("/api/connections");
         if (!res.ok) throw new Error("Failed to fetch connections");
         const data = await res.json();
-        setConnections(data.connections || []);
+        const list = data.connections || [];
+        setConnections(list);
+        onLoaded?.(list.length);
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to load connections");
+        onLoaded?.(0);
       } finally {
         setLoading(false);
       }
@@ -75,7 +79,7 @@ export function SavedConnectionsList({ onSelect, isLoading }: SavedConnectionsLi
   }
 
   if (connections.length === 0) {
-    return <div className="text-sm text-gray-500 dark:text-gray-400">No saved connections yet. Create one below.</div>;
+    return null;
   }
 
   return (
