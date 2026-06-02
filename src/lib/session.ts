@@ -8,9 +8,9 @@ export async function getSession() {
     password: getSessionSecret(),
     cookieName: "db-analysis-session",
     cookieOptions: {
-      secure: process.env.NODE_ENV === "production",
+      secure: process.env.SECURE_COOKIES === "true",
       httpOnly: true,
-      sameSite: "strict" as const,
+      sameSite: "lax" as const,
       maxAge: 60 * 60 * 8, // 8 hours
     },
   };

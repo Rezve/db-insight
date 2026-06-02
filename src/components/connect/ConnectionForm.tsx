@@ -129,6 +129,7 @@ export default function ConnectionForm() {
           return;
         }
 
+        router.refresh();
         router.push("/dashboard");
       } else {
         toast.error(data.error ?? "Connection failed");
@@ -168,7 +169,7 @@ export default function ConnectionForm() {
         toast.success("Connection saved! Redirecting...");
         setShowSavePrompt(false);
         setPromptData(null);
-        setTimeout(() => router.push("/dashboard"), 500);
+        setTimeout(() => { router.refresh(); router.push("/dashboard"); }, 500);
       } else {
         throw new Error(result.error || "Failed to save connection");
       }
@@ -188,6 +189,7 @@ export default function ConnectionForm() {
       const data = await res.json();
       if (data.success) {
         toast.success(`Connected to ${data.databaseName}`);
+        router.refresh();
         router.push("/dashboard");
       } else {
         toast.error(data.error ?? "Connection failed");
