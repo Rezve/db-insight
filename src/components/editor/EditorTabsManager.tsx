@@ -2,6 +2,7 @@
 
 import { useRef, useState, useEffect } from "react";
 import { Plus, Upload, Download, X } from "lucide-react";
+import ClosedTabsPanel from "./ClosedTabsPanel";
 import { Button } from "@/components/ui/button";
 import SqlEditor from "./SqlEditor";
 
@@ -74,6 +75,7 @@ export default function EditorTabsManager() {
   const [tabs, setTabs] = useState<TabState[]>(() => [createTab([])]);
   const [activeTabId, setActiveTabId] = useState<string>(() => tabs[0].id);
   const [loaded, setLoaded] = useState(false);
+  const [closedTabNames, setClosedTabNames] = useState<string[]>([]);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
   const renameInputRef = useRef<HTMLInputElement | null>(null);
@@ -109,6 +111,10 @@ export default function EditorTabsManager() {
       })
       .catch(() => { /* server unavailable — keep the initial tab */ })
       .finally(() => setLoaded(true));
+    fetch("/api/closed-tabs")
+      .then((r) => r.json())
+      .then((data) => setClosedTabNames((data.closedTabs ?? []).map((t: { name: string }) => t.name)))
+      .catch(() => {});
   }, []);
 
   // Save tab state to SQLite on every change (debounced 500ms)
@@ -133,19 +139,31 @@ export default function EditorTabsManager() {
   }
 
   function addTab(name?: string, sql?: string) {
-    const newTab = createTab(tabs, name, sql);
+    const allNames = [...tabs, ...closedTabNames.map((n) => ({ name: n }))];
+    const newTab = createTab(allNames, name, sql);
     setTabs((prev) => [...prev, newTab]);
     setActiveTabId(newTab.id);
   }
 
   function closeTab(id: string) {
     if (tabs.length === 1) return;
+    const tab = tabs.find((t) => t.id === id);
     const idx = tabs.findIndex((t) => t.id === id);
     const nextTab = tabs[idx - 1] ?? tabs[idx + 1];
     setTabs((prev) => prev.filter((t) => t.id !== id));
-    if (activeTabId === id) {
-      setActiveTabId(nextTab.id);
+    if (activeTabId === id) setActiveTabId(nextTab.id);
+    if (tab) {
+      setClosedTabNames((prev) => [...prev, tab.name]);
+      fetch("/api/closed-tabs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: tab.id, name: tab.name, sql: tab.sql }),
+      }).catch(() => {});
     }
+  }
+
+  function restoreTab(tab: { id: string; name: string; sql: string }) {
+    addTab(tab.name, tab.sql);
   }
 
   function startRename(tab: TabState) {
@@ -192,8 +210,8 @@ export default function EditorTabsManager() {
   return (
     <div className="flex flex-col h-full">
       {/* Tab Bar */}
-      <div className="flex items-center border-b bg-zinc-50 dark:bg-zinc-900 shrink-0 overflow-x-auto">
-        <div className="flex items-end min-w-0 flex-1">
+      <div className="flex items-center border-b bg-zinc-50 dark:bg-zinc-900 shrink-0">
+        <div className="flex items-end min-w-0 flex-1 overflow-x-auto">
           {tabs.map((tab) => {
             const isActive = tab.id === activeTabId;
             const isRenaming = renamingId === tab.id;
@@ -253,6 +271,8 @@ export default function EditorTabsManager() {
             <Plus className="h-3.5 w-3.5" />
           </button>
         </div>
+
+        <ClosedTabsPanel onRestore={restoreTab} />
 
         {/* Save / Import buttons — far right */}
         <div className="flex items-center gap-1 shrink-0 mr-2">

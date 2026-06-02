@@ -29,6 +29,14 @@ function getDb(): Database.Database {
       key   TEXT PRIMARY KEY,
       value TEXT NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS closed_tabs (
+      id            TEXT NOT NULL,
+      server_name   TEXT NOT NULL DEFAULT '',
+      database_name TEXT NOT NULL DEFAULT '',
+      name          TEXT NOT NULL,
+      sql_text      TEXT NOT NULL DEFAULT '',
+      closed_at     TEXT NOT NULL DEFAULT (datetime('now'))
+    );
     CREATE TABLE IF NOT EXISTS connections (
       id            TEXT PRIMARY KEY,
       name          TEXT NOT NULL,
@@ -110,6 +118,34 @@ export function saveEditorState(state: EditorState, serverName: string, database
       "INSERT OR REPLACE INTO editor_settings (key, value) VALUES (?, ?)"
     ).run(settingsKey, state.activeTabId);
   })();
+}
+
+export interface ClosedTab {
+  id: string;
+  name: string;
+  sql: string;
+  closedAt: string;
+}
+
+export function getClosedTabs(serverName: string, databaseName: string): ClosedTab[] {
+  const db = getDb();
+  return db
+    .prepare("SELECT id, name, sql_text AS sql, closed_at AS closedAt FROM closed_tabs WHERE server_name = ? AND database_name = ? ORDER BY closed_at DESC")
+    .all(serverName, databaseName) as ClosedTab[];
+}
+
+export function addClosedTab(tab: PersistedTab, serverName: string, databaseName: string): void {
+  const db = getDb();
+  db.prepare(
+    "INSERT INTO closed_tabs (id, server_name, database_name, name, sql_text) VALUES (?, ?, ?, ?, ?)"
+  ).run(tab.id, serverName, databaseName, tab.name, tab.sql);
+}
+
+export function deleteClosedTab(id: string, closedAt: string, serverName: string, databaseName: string): void {
+  const db = getDb();
+  db.prepare(
+    "DELETE FROM closed_tabs WHERE id = ? AND closed_at = ? AND server_name = ? AND database_name = ?"
+  ).run(id, closedAt, serverName, databaseName);
 }
 
 export interface SavedConnection {
