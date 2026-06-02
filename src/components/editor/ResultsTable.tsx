@@ -243,7 +243,7 @@ export default function ResultsTable({ result, loading, resultSql }: ResultsTabl
       return (
         <div className="overflow-auto h-full">
           <TooltipProvider>
-            <table className="w-full text-sm border-collapse">
+            <table className="min-w-full text-sm border-collapse">
               <thead className="sticky top-0 bg-zinc-50 dark:bg-zinc-900 border-b">
                 <tr>
                   {result.columns.map((col) => (
@@ -310,7 +310,7 @@ export default function ResultsTable({ result, loading, resultSql }: ResultsTabl
       )}
       <div className="overflow-auto flex-1">
         <TooltipProvider>
-          <table className="w-full text-sm border-collapse">
+          <table className="min-w-full text-sm border-collapse">
             <thead className="sticky top-0 bg-zinc-50 dark:bg-zinc-900 border-b">
               <tr>
                 {result.columns.map((col) => (
