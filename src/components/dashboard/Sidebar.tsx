@@ -7,6 +7,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import {
+  Braces,
   Code2,
   Table2,
   LayoutDashboard,
@@ -18,17 +19,20 @@ import {
   Search,
   X,
 } from "lucide-react";
-import type { TableInfo } from "@/types/db";
+import type { TableInfo, StoredProcedureInfo } from "@/types/db";
 
 interface SidebarProps {
   tables: TableInfo[];
+  storedProcedures: StoredProcedureInfo[];
 }
 
-export default function Sidebar({ tables }: SidebarProps) {
+export default function Sidebar({ tables, storedProcedures }: SidebarProps) {
   const pathname = usePathname();
   const [isTablesOpen, setIsTablesOpen] = useState(false);
+  const [isProceduresOpen, setIsProceduresOpen] = useState(false);
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [procedureSearchQuery, setProcedureSearchQuery] = useState("");
 
   const navLinks = [
     { href: "/dashboard", label: "Overview", icon: LayoutDashboard },
@@ -45,6 +49,15 @@ export default function Sidebar({ tables }: SidebarProps) {
           t.schema.toLowerCase().includes(q),
       )
     : tables;
+
+  const pq = procedureSearchQuery.toLowerCase();
+  const filteredProcs = procedureSearchQuery
+    ? storedProcedures.filter(
+        (p) =>
+          p.name.toLowerCase().includes(pq) ||
+          p.schema.toLowerCase().includes(pq),
+      )
+    : storedProcedures;
 
   return (
     <aside
@@ -99,7 +112,8 @@ export default function Sidebar({ tables }: SidebarProps) {
       </div>
 
       {!isCollapsed && (
-        <div className="flex-1 overflow-hidden flex flex-col p-3">
+        <div className="flex-1 overflow-hidden flex flex-col p-3 gap-1">
+          {/* Tables section */}
           <button
             onClick={() => {
               setIsTablesOpen((prev) => {
@@ -118,7 +132,7 @@ export default function Sidebar({ tables }: SidebarProps) {
             Tables ({tables.length})
           </button>
           {isTablesOpen && (
-            <>
+            <div className="flex flex-col overflow-hidden" style={{ maxHeight: "40%" }}>
               <div className="relative mb-1.5 px-2">
                 <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground pointer-events-none" />
                 <input
@@ -177,8 +191,84 @@ export default function Sidebar({ tables }: SidebarProps) {
                   )}
                 </nav>
               </ScrollArea>
-            </>
+            </div>
           )}
+
+          {/* Stored Procedures section */}
+          <button
+            onClick={() => {
+              setIsProceduresOpen((prev) => {
+                if (prev) setProcedureSearchQuery("");
+                return !prev;
+              });
+            }}
+            className="flex items-center gap-1 text-xs font-semibold text-muted-foreground uppercase tracking-wider px-2 py-1 w-full hover:text-foreground transition-colors"
+          >
+            <ChevronDown
+              className={cn(
+                "h-3.5 w-3.5 transition-transform",
+                isProceduresOpen && "rotate-180",
+              )}
+            />
+            Stored Procedures ({storedProcedures.length})
+          </button>
+          {isProceduresOpen && (
+            <div className="flex flex-col overflow-hidden flex-1 min-h-0">
+              <div className="relative mb-1.5 px-2">
+                <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground pointer-events-none" />
+                <input
+                  value={procedureSearchQuery}
+                  onChange={(e) => setProcedureSearchQuery(e.target.value)}
+                  placeholder="Filter procedures…"
+                  className="w-full pl-6 pr-5 py-1 text-xs rounded-md bg-zinc-100 dark:bg-zinc-800 border-0 outline-none focus:ring-1 focus:ring-primary/50 placeholder:text-muted-foreground"
+                />
+                {procedureSearchQuery && (
+                  <button
+                    onClick={() => setProcedureSearchQuery("")}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                )}
+              </div>
+              <ScrollArea className="flex-1 min-h-0">
+                <nav className="space-y-0.5 pr-2">
+                  {filteredProcs.map((sp) => {
+                    const href = `/dashboard/procedures/${encodeURIComponent(sp.fullName)}`;
+                    const isActive = pathname === href;
+                    return (
+                      <Link
+                        key={sp.fullName}
+                        href={href}
+                        className={cn(
+                          "flex items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors min-w-0",
+                          isActive
+                            ? "bg-primary/10 text-primary font-medium"
+                            : "text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800",
+                        )}
+                      >
+                        <Braces className="h-3.5 w-3.5 flex-shrink-0" />
+                        <span
+                          className="truncate min-w-0 flex-1"
+                          title={sp.fullName}
+                        >
+                          {sp.name}
+                        </span>
+                      </Link>
+                    );
+                  })}
+                  {filteredProcs.length === 0 && (
+                    <p className="px-2 py-2 text-xs text-muted-foreground">
+                      No procedures found.
+                    </p>
+                  )}
+                </nav>
+              </ScrollArea>
+            </div>
+          )}
+
+          {/* When neither section is open, give tables section the remaining space */}
+          {!isTablesOpen && !isProceduresOpen && <div className="flex-1" />}
         </div>
       )}
     </aside>

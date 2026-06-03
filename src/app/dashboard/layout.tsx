@@ -2,11 +2,11 @@ import { redirect } from "next/navigation";
 import { getSession } from "@/lib/session";
 import { isSetupComplete } from "@/lib/config";
 import { executeQuery } from "@/lib/db";
-import { SQL_LIST_TABLES } from "@/lib/sql-queries";
+import { SQL_LIST_TABLES, SQL_LIST_STORED_PROCEDURES } from "@/lib/sql-queries";
 import Header from "@/components/dashboard/Header";
 import Sidebar from "@/components/dashboard/Sidebar";
 import { SessionCacheProvider } from "@/contexts/session-cache-context";
-import type { TableInfo } from "@/types/db";
+import type { TableInfo, StoredProcedureInfo } from "@/types/db";
 
 export default async function DashboardLayout({
   children,
@@ -23,19 +23,34 @@ export default async function DashboardLayout({
   }
 
   let tables: TableInfo[] = [];
+  let storedProcedures: StoredProcedureInfo[] = [];
+
   try {
-    const rows = await executeQuery<{ schema: string; name: string; type: string }>(
-      session.sessionId!,
-      SQL_LIST_TABLES
-    );
-    tables = rows.map((row) => ({
+    const [tableRows, spRows] = await Promise.all([
+      executeQuery<{ schema: string; name: string; type: string }>(
+        session.sessionId!,
+        SQL_LIST_TABLES
+      ),
+      executeQuery<{ schema: string; name: string }>(
+        session.sessionId!,
+        SQL_LIST_STORED_PROCEDURES
+      ),
+    ]);
+
+    tables = tableRows.map((row) => ({
       schema: row.schema,
       name: row.name,
       fullName: `${row.schema}.${row.name}`,
       type: row.type as "BASE TABLE" | "VIEW",
     }));
+
+    storedProcedures = spRows.map((row) => ({
+      schema: row.schema,
+      name: row.name,
+      fullName: `${row.schema}.${row.name}`,
+    }));
   } catch {
-    // If we can't fetch tables, still render the layout
+    // If we can't fetch tables/procedures, still render the layout
   }
 
   return (
@@ -46,7 +61,7 @@ export default async function DashboardLayout({
           databaseName={session.databaseName ?? "Unknown database"}
         />
         <div className="flex flex-1 overflow-hidden">
-          <Sidebar tables={tables} />
+          <Sidebar tables={tables} storedProcedures={storedProcedures} />
           <main className="flex-1 overflow-auto bg-background">{children}</main>
         </div>
       </div>

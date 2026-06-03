@@ -16,6 +16,12 @@ export interface TableInfo {
   sizeGB?: number;
 }
 
+export interface StoredProcedureInfo {
+  schema: string;
+  name: string;
+  fullName: string;
+}
+
 export interface ColumnInfo {
   name: string;
   dataType: string;

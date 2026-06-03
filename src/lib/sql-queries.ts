@@ -56,6 +56,23 @@ WHERE ROUTINE_TYPE IN ('PROCEDURE', 'FUNCTION')
 ORDER BY ROUTINE_SCHEMA, ROUTINE_NAME
 `;
 
+export const SQL_LIST_STORED_PROCEDURES = `
+SELECT
+    ROUTINE_SCHEMA AS [schema],
+    ROUTINE_NAME   AS [name]
+FROM INFORMATION_SCHEMA.ROUTINES
+WHERE ROUTINE_TYPE = 'PROCEDURE'
+ORDER BY ROUTINE_SCHEMA, ROUTINE_NAME
+`;
+
+export const SQL_GET_SP_DEFINITION = `
+SELECT sm.definition AS [definition]
+FROM sys.sql_modules sm
+INNER JOIN sys.objects o ON sm.object_id = o.object_id
+INNER JOIN sys.schemas s ON o.schema_id = s.schema_id
+WHERE s.name = @schema AND o.name = @name AND o.type = 'P'
+`;
+
 export const SQL_SCHEMA_FOREIGN_KEYS = `
 SELECT
     src_s.name  AS [sourceSchema],
