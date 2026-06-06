@@ -23,6 +23,7 @@ import MissingIndexes from "@/components/analysis/MissingIndexes";
 import TableSizeCard from "@/components/analysis/TableSizeCard";
 import TableSchema from "@/components/analysis/TableSchema";
 import TableDataTab from "@/components/analysis/TableDataTab";
+import TableModifier from "@/components/analysis/TableModifier";
 import type { SampleSize } from "@/types/analysis";
 
 const FULL_SCAN_WARN_THRESHOLD = 500_000;
@@ -37,6 +38,7 @@ export default function TableAnalysisPage({ params }: PageProps) {
   const searchParams = useSearchParams();
   const defaultTab = searchParams.get("tab") ?? "overview";
 
+  const [activeTab, setActiveTab] = useState(defaultTab);
   const [sampleSize, setSampleSize] = useState<SampleSize>("small");
   const [pendingSampleSize, setPendingSampleSize] = useState<SampleSize | null>(null);
   const [rowCount, setRowCount] = useState<number | null>(null);
@@ -83,7 +85,7 @@ export default function TableAnalysisPage({ params }: PageProps) {
       </div>
 
       {/* Tabs */}
-      <Tabs defaultValue={defaultTab} className="space-y-4">
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
         <div className="flex items-center justify-between flex-wrap gap-3">
           <TabsList>
             <TabsTrigger value="overview">Overview</TabsTrigger>
@@ -92,8 +94,11 @@ export default function TableAnalysisPage({ params }: PageProps) {
             <TabsTrigger value="distribution">Distribution</TabsTrigger>
             <TabsTrigger value="indexes">Indexes</TabsTrigger>
             <TabsTrigger value="missing">Missing Indexes</TabsTrigger>
+            <TabsTrigger value="modify">Alter Table</TabsTrigger>
           </TabsList>
-          <SampleSizeSelector value={sampleSize} onChange={handleSampleSizeChange} />
+          {activeTab === "distribution" && (
+            <SampleSizeSelector value={sampleSize} onChange={handleSampleSizeChange} />
+          )}
         </div>
 
         <TabsContent value="overview" className="space-y-4">
@@ -133,6 +138,10 @@ export default function TableAnalysisPage({ params }: PageProps) {
 
         <TabsContent value="missing">
           <MissingIndexes tableName={tableName} />
+        </TabsContent>
+
+        <TabsContent value="modify">
+          <TableModifier tableName={tableName} />
         </TabsContent>
       </Tabs>
 

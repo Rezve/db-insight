@@ -17,64 +17,13 @@ import {
 import { Check, Copy, TableIcon, Code2 } from "lucide-react";
 import type { TableColumnDetail, IndexInfo } from "@/types/analysis";
 import { buildCreateTableDDL, buildIndexDDL } from "@/lib/sql-queries";
+import { highlightDDL } from "@/lib/highlight-ddl";
+import { formatDataType } from "@/lib/format-data-type";
 
 interface TableSchemaProps {
   tableName: string;
 }
 
-// Tokenise a CREATE TABLE DDL string and wrap tokens in coloured <span>s.
-// Uses inline styles so Tailwind purging cannot remove the classes.
-function highlightDDL(ddl: string): string {
-  const rules: Array<[RegExp, string]> = [
-    // [quoted identifiers]
-    [/\[[^\]]*\]/y, "color:#fbbf24"],
-    // SQL keywords
-    [/\b(CREATE|TABLE|CONSTRAINT|PRIMARY|KEY|NOT|NULL|IDENTITY|DEFAULT|UNIQUE|NONCLUSTERED|CLUSTERED|INDEX|ON|INCLUDE)\b/iy, "color:#60a5fa;font-weight:600"],
-    // Data types
-    [/\b(INT|BIGINT|SMALLINT|TINYINT|VARCHAR|NVARCHAR|CHAR|NCHAR|TEXT|NTEXT|DECIMAL|NUMERIC|FLOAT|REAL|DATETIME2|DATETIME|DATE|TIME|BIT|MONEY|SMALLMONEY|UNIQUEIDENTIFIER|VARBINARY|BINARY|IMAGE|XML|MAX)\b/iy, "color:#34d399"],
-    // Numbers
-    [/\b\d+\b/y, "color:#fb923c"],
-    // Punctuation
-    [/[(),;]/y, "color:#94a3b8"],
-    // Whitespace (no style — preserve as-is)
-    [/\s+/y, ""],
-    // Fallback: any remaining character
-    [/[\s\S]/y, "color:#e2e8f0"],
-  ];
-
-  let html = "";
-  let pos = 0;
-  while (pos < ddl.length) {
-    for (const [re, style] of rules) {
-      re.lastIndex = pos;
-      const m = re.exec(ddl);
-      if (m) {
-        const safe = m[0].replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-        html += style ? `<span style="${style}">${safe}</span>` : safe;
-        pos += m[0].length;
-        break;
-      }
-    }
-  }
-  return html;
-}
-
-function formatDataType(col: TableColumnDetail): string {
-  const t = col.dataType.toLowerCase();
-  if (["char", "varchar", "nchar", "nvarchar", "binary", "varbinary"].includes(t)) {
-    if (col.maxLength === -1) return `${col.dataType}(max)`;
-    if (col.maxLength != null) return `${col.dataType}(${col.maxLength})`;
-  }
-  if (["decimal", "numeric"].includes(t)) {
-    if (col.numericPrecision != null && col.numericScale != null) {
-      return `${col.dataType}(${col.numericPrecision}, ${col.numericScale})`;
-    }
-  }
-  if (["float", "real"].includes(t) && col.numericPrecision != null) {
-    return `${col.dataType}(${col.numericPrecision})`;
-  }
-  return col.dataType;
-}
 
 export default function TableSchema({ tableName }: TableSchemaProps) {
   const { enabled, cache, refreshCount } = useSessionCacheContext();

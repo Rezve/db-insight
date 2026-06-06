@@ -468,3 +468,140 @@ export function synthesizeMissingIndexDDL(
   const include = includedColumns ? ` INCLUDE (${includedColumns})` : "";
   return `CREATE NONCLUSTERED INDEX [IX_Missing_${idx}]\nON ${quoteId(schema)}.${quoteId(tableName)} (${keyCols})${include};`;
 }
+
+export const SQL_EXTENDED_COLUMN_DETAILS = `
+SELECT
+    c.name AS [columnName],
+    CAST(c.is_computed AS BIT) AS [isComputed],
+    cc.definition AS [computedDefinition],
+    CAST(cc.is_persisted AS BIT) AS [isPersisted],
+    CAST(c.is_sparse AS BIT) AS [isSparse],
+    ic.seed_value AS [identitySeed],
+    ic.increment_value AS [identityIncrement],
+    c.collation_name AS [collationName],
+    CAST(ep.value AS NVARCHAR(MAX)) AS [columnComment],
+    dc.name AS [defaultConstraintName],
+    dc.definition AS [defaultDefinition]
+FROM sys.columns c
+INNER JOIN sys.tables t ON c.object_id = t.object_id
+INNER JOIN sys.schemas s ON t.schema_id = s.schema_id
+LEFT JOIN sys.computed_columns cc ON c.object_id = cc.object_id AND c.column_id = cc.column_id
+LEFT JOIN sys.identity_columns ic ON c.object_id = ic.object_id AND c.column_id = ic.column_id
+LEFT JOIN sys.default_constraints dc
+    ON c.object_id = dc.parent_object_id AND c.column_id = dc.parent_column_id
+LEFT JOIN sys.extended_properties ep
+    ON ep.major_id = c.object_id AND ep.minor_id = c.column_id
+    AND ep.name = 'MS_Description' AND ep.class = 1
+WHERE s.name = @schema AND t.name = @tableName
+ORDER BY c.column_id
+`;
+
+export const SQL_FK_DETAILS = `
+SELECT
+    fk.name AS [constraintName],
+    src_c.name AS [sourceColumn],
+    tgt_s.name AS [targetSchema],
+    tgt_t.name AS [targetTable],
+    tgt_c.name AS [targetColumn],
+    fk.delete_referential_action_desc AS [onDelete],
+    fk.update_referential_action_desc AS [onUpdate]
+FROM sys.foreign_keys fk
+INNER JOIN sys.foreign_key_columns fkc ON fk.object_id = fkc.constraint_object_id
+INNER JOIN sys.tables src_t ON fkc.parent_object_id = src_t.object_id
+INNER JOIN sys.schemas src_s ON src_t.schema_id = src_s.schema_id
+INNER JOIN sys.columns src_c
+    ON fkc.parent_object_id = src_c.object_id AND fkc.parent_column_id = src_c.column_id
+INNER JOIN sys.tables tgt_t ON fkc.referenced_object_id = tgt_t.object_id
+INNER JOIN sys.schemas tgt_s ON tgt_t.schema_id = tgt_s.schema_id
+INNER JOIN sys.columns tgt_c
+    ON fkc.referenced_object_id = tgt_c.object_id AND fkc.referenced_column_id = tgt_c.column_id
+WHERE src_s.name = @schema AND src_t.name = @tableName
+ORDER BY fk.name, fkc.constraint_column_id
+`;
+
+const CHAR_TYPES = ["char", "nchar", "varchar", "nvarchar", "text", "ntext"];
+
+export function buildAlterColumnDDL(
+  schema: string,
+  tableName: string,
+  colName: string,
+  dataTypeFull: string,
+  isNullable: boolean,
+  collation?: string
+): string {
+  const nullPart = isNullable ? "NULL" : "NOT NULL";
+  const collatePart =
+    collation && CHAR_TYPES.includes(dataTypeFull.split("(")[0].toLowerCase())
+      ? ` COLLATE ${collation}`
+      : "";
+  return `ALTER TABLE ${quoteId(schema)}.${quoteId(tableName)} ALTER COLUMN ${quoteId(colName)} ${dataTypeFull}${collatePart} ${nullPart};`;
+}
+
+export function buildDropAddDefaultDDL(
+  schema: string,
+  tableName: string,
+  colName: string,
+  oldConstraintName: string | null,
+  newDefault?: string
+): string {
+  const stmts: string[] = [];
+  if (oldConstraintName) {
+    stmts.push(`ALTER TABLE ${quoteId(schema)}.${quoteId(tableName)} DROP CONSTRAINT ${quoteId(oldConstraintName)};`);
+  }
+  if (newDefault && newDefault.trim()) {
+    stmts.push(`ALTER TABLE ${quoteId(schema)}.${quoteId(tableName)} ADD DEFAULT (${newDefault}) FOR ${quoteId(colName)};`);
+  }
+  return stmts.join("\n");
+}
+
+export function buildColumnCommentDDL(
+  schema: string,
+  tableName: string,
+  colName: string,
+  comment: string,
+  hasExisting: boolean
+): string {
+  const safeComment = comment.replace(/'/g, "''");
+  const proc = hasExisting ? "sys.sp_updateextendedproperty" : "sys.sp_addextendedproperty";
+  return `EXEC ${proc} @name = N'MS_Description', @value = N'${safeComment}', @level0type = N'SCHEMA', @level0name = N'${schema.replace(/'/g, "''")}', @level1type = N'TABLE', @level1name = N'${tableName.replace(/'/g, "''")}', @level2type = N'COLUMN', @level2name = N'${colName.replace(/'/g, "''")}';`;
+}
+
+export function buildDropIndexDDL(
+  schema: string,
+  tableName: string,
+  indexName: string
+): string {
+  return `DROP INDEX ${quoteId(indexName)} ON ${quoteId(schema)}.${quoteId(tableName)};`;
+}
+
+export function buildAlterIndexDDL(
+  schema: string,
+  tableName: string,
+  indexName: string,
+  action: "DISABLE" | "REBUILD" | "REORGANIZE",
+  online?: boolean
+): string {
+  const base = `ALTER INDEX ${quoteId(indexName)} ON ${quoteId(schema)}.${quoteId(tableName)} ${action}`;
+  const withClause = action === "REBUILD" && online ? ` WITH (ONLINE = ON)` : "";
+  return `${base}${withClause};`;
+}
+
+export function buildDropConstraintDDL(
+  schema: string,
+  tableName: string,
+  constraintName: string
+): string {
+  return `ALTER TABLE ${quoteId(schema)}.${quoteId(tableName)} DROP CONSTRAINT ${quoteId(constraintName)};`;
+}
+
+export function buildRenameColumnDDL(
+  schema: string,
+  tableName: string,
+  oldName: string,
+  newName: string
+): string {
+  const objectName = `${schema.replace(/'/g, "''")}`.concat(
+    `.${tableName.replace(/'/g, "''")}.${oldName.replace(/'/g, "''")}`
+  );
+  return `EXEC sp_rename N'${objectName}', N'${newName.replace(/'/g, "''")}', N'COLUMN';`;
+}

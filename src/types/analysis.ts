@@ -76,6 +76,35 @@ export interface TableColumnDetail {
   fkColumn: string | null;
 }
 
+export interface ExtendedColumnDetail {
+  columnName: string;
+  isComputed: boolean;
+  computedDefinition: string | null;
+  isPersisted: boolean | null;
+  isSparse: boolean;
+  identitySeed: number | null;
+  identityIncrement: number | null;
+  collationName: string | null;
+  columnComment: string | null;
+  defaultConstraintName: string | null;
+  defaultDefinition: string | null;
+}
+
+export interface ForeignKeyDetail {
+  constraintName: string;
+  sourceColumn: string;
+  targetSchema: string;
+  targetTable: string;
+  targetColumn: string;
+  onDelete: string;
+  onUpdate: string;
+}
+
+export interface PrimaryKeyDetail {
+  constraintName: string;
+  columns: string[];
+}
+
 export interface MissingIndex {
   improvementMeasure: number;
   avgTotalCost: number;
