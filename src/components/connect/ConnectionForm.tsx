@@ -42,6 +42,7 @@ export default function ConnectionForm() {
   const [promptData, setPromptData] = useState<{ serverName: string; databaseName: string } | null>(null);
   const [savedCount, setSavedCount] = useState<number | null>(null);
   const [manualExpanded, setManualExpanded] = useState(false);
+  const [connectingId, setConnectingId] = useState<string | null>(null);
 
   const [creds, setCreds] = useState<Credentials>({
     engine: "sqlserver",
@@ -180,6 +181,7 @@ export default function ConnectionForm() {
 
   async function handleConnectFromSaved(connectionId: string) {
     setLoading(true);
+    setConnectingId(connectionId);
     try {
       const res = await fetch("/api/connect", {
         method: "POST",
@@ -198,6 +200,7 @@ export default function ConnectionForm() {
       toast.error("Network error");
     } finally {
       setLoading(false);
+      setConnectingId(null);
     }
   }
 
@@ -246,6 +249,7 @@ export default function ConnectionForm() {
             <SavedConnectionsList
               onSelect={handleConnectFromSaved}
               isLoading={loading}
+              connectingId={connectingId}
               onLoaded={(count) => {
                 setSavedCount(count);
                 if (count === 0) setManualExpanded(true);

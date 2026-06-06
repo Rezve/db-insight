@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { AlertCircle, Trash2 } from "lucide-react";
+import { AlertCircle, Loader2, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 
@@ -19,10 +19,11 @@ interface SavedConnection {
 interface SavedConnectionsListProps {
   onSelect: (id: string) => void;
   isLoading?: boolean;
+  connectingId?: string | null;
   onLoaded?: (count: number) => void;
 }
 
-export function SavedConnectionsList({ onSelect, isLoading, onLoaded }: SavedConnectionsListProps) {
+export function SavedConnectionsList({ onSelect, isLoading, connectingId, onLoaded }: SavedConnectionsListProps) {
   const [connections, setConnections] = useState<SavedConnection[]>([]);
   const [error, setError] = useState<string>("");
   const [loading, setLoading] = useState(true);
@@ -97,14 +98,19 @@ export function SavedConnectionsList({ onSelect, isLoading, onLoaded }: SavedCon
               className="flex-1 flex flex-col items-start p-3 text-left disabled:opacity-50"
             >
               <div className="flex items-center gap-2 w-full">
-                {conn.color && (
-                  <div
-                    className="h-3 w-3 rounded-full flex-shrink-0"
-                    style={{ backgroundColor: conn.color }}
-                  />
-                )}
+                {connectingId === conn.id
+                  ? <Loader2 className="h-3 w-3 animate-spin text-blue-500 flex-shrink-0" />
+                  : conn.color && (
+                    <div
+                      className="h-3 w-3 rounded-full flex-shrink-0"
+                      style={{ backgroundColor: conn.color }}
+                    />
+                  )
+                }
                 <div className="flex-1">
-                  <div className="font-medium text-gray-900 dark:text-gray-100">{conn.name}</div>
+                  <div className="font-medium text-gray-900 dark:text-gray-100">
+                    {connectingId === conn.id ? "Connecting…" : conn.name}
+                  </div>
                   {conn.tag && <div className="text-xs text-gray-600 dark:text-gray-400">{conn.tag}</div>}
                 </div>
               </div>
