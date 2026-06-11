@@ -9,8 +9,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { AlertCircle, Save, X, Loader2, Copy, Check } from "lucide-react";
-import { toast } from "sonner";
+import { AlertCircle, Save, X, Loader2 } from "lucide-react";
 
 interface Column {
   name: string;
@@ -45,34 +44,15 @@ interface IndexInfo {
   columns: IndexColumn[];
 }
 
-function CopyButton({ value }: { value: string }) {
-  const [copied, setCopied] = useState(false);
-  function handleCopy(e: React.MouseEvent) {
-    e.stopPropagation();
-    navigator.clipboard.writeText(value);
-    toast.success("Copied to clipboard");
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  }
-  return (
-    <button
-      onClick={handleCopy}
-      className="ml-2 shrink-0 text-background/50 hover:text-background transition-colors"
-    >
-      {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
-    </button>
-  );
-}
-
 function ColHeader({ col }: { col: Column }) {
   return (
-    <Tooltip>
+    <Tooltip delayDuration={600}>
       <TooltipTrigger asChild>
         <th className="text-left px-3 py-2 font-medium text-xs text-muted-foreground whitespace-nowrap border-r last:border-r-0 cursor-default">
           {col.name}
         </th>
       </TooltipTrigger>
-      <TooltipContent>
+      <TooltipContent className="duration-150">
         <span>
           <b>{col.name}</b>
           {col.dataType !== "unknown" && <>: {col.dataType}</>}
@@ -95,10 +75,19 @@ function displayValue(val: unknown): string | null {
   return String(val);
 }
 
-export default function ResultsTable({ result, loading, resultSql }: ResultsTableProps) {
+export default function ResultsTable({
+  result,
+  loading,
+  resultSql,
+}: ResultsTableProps) {
   // rowIdx -> colName -> new value
-  const [edits, setEdits] = useState<Map<number, Map<string, string | null>>>(new Map());
-  const [editingCell, setEditingCell] = useState<{ row: number; col: string } | null>(null);
+  const [edits, setEdits] = useState<Map<number, Map<string, string | null>>>(
+    new Map(),
+  );
+  const [editingCell, setEditingCell] = useState<{
+    row: number;
+    col: string;
+  } | null>(null);
   const [pkColumns, setPkColumns] = useState<string[]>([]);
   const [sourceTable, setSourceTable] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -114,7 +103,10 @@ export default function ResultsTable({ result, loading, resultSql }: ResultsTabl
     setSaveError(null);
     const table = resultSql ? extractSingleTable(resultSql) : null;
     setSourceTable(table);
-    if (!table) { setPkColumns([]); return; }
+    if (!table) {
+      setPkColumns([]);
+      return;
+    }
     fetch(`/api/analysis/indexes?table=${encodeURIComponent(table)}`)
       .then((r) => r.json())
       .then((data: { indexes?: IndexInfo[] }) => {
@@ -122,7 +114,7 @@ export default function ResultsTable({ result, loading, resultSql }: ResultsTabl
           data.indexes?.find((i) => i.isPrimaryKey) ??
           data.indexes?.find((i) => i.isUnique && !i.isDisabled);
         setPkColumns(
-          pk ? pk.columns.filter((c) => !c.isIncluded).map((c) => c.name) : []
+          pk ? pk.columns.filter((c) => !c.isIncluded).map((c) => c.name) : [],
         );
       })
       .catch(() => setPkColumns([]));
@@ -143,7 +135,12 @@ export default function ResultsTable({ result, loading, resultSql }: ResultsTabl
     return pkColumns.every((pk) => pk in row);
   }
 
-  function commitEdit(rowIdx: number, colName: string, newVal: string, original: unknown) {
+  function commitEdit(
+    rowIdx: number,
+    colName: string,
+    newVal: string,
+    original: unknown,
+  ) {
     setEditingCell(null);
     const originalStr = displayValue(original) ?? "";
     setEdits((prev) => {
@@ -201,7 +198,10 @@ export default function ResultsTable({ result, loading, resultSql }: ResultsTabl
     }
   }
 
-  const totalChanges = Array.from(edits.values()).reduce((s, m) => s + m.size, 0);
+  const totalChanges = Array.from(edits.values()).reduce(
+    (s, m) => s + m.size,
+    0,
+  );
 
   if (loading) {
     return (
@@ -230,7 +230,9 @@ export default function ResultsTable({ result, loading, resultSql }: ResultsTabl
             <p className="text-sm font-medium">Query Error</p>
             <p className="text-sm font-mono">{result.error}</p>
             {result.lineNumber && (
-              <p className="text-xs text-muted-foreground">Line {result.lineNumber}</p>
+              <p className="text-xs text-muted-foreground">
+                Line {result.lineNumber}
+              </p>
             )}
           </div>
         </div>
@@ -242,7 +244,7 @@ export default function ResultsTable({ result, loading, resultSql }: ResultsTabl
     if (result.columns.length > 0) {
       return (
         <div className="overflow-auto h-full">
-          <TooltipProvider>
+          <TooltipProvider skipDelayDuration={0}>
             <table className="min-w-full text-sm border-collapse">
               <thead className="sticky top-0 bg-zinc-50 dark:bg-zinc-900 border-b">
                 <tr>
@@ -277,7 +279,8 @@ export default function ResultsTable({ result, loading, resultSql }: ResultsTabl
       {edits.size > 0 && (
         <div className="px-4 py-1.5 bg-blue-50 dark:bg-blue-900/20 border-b flex items-center gap-3 text-xs flex-shrink-0">
           <span className="text-blue-700 dark:text-blue-300">
-            {totalChanges} change{totalChanges !== 1 ? "s" : ""} in {edits.size} row{edits.size !== 1 ? "s" : ""}
+            {totalChanges} change{totalChanges !== 1 ? "s" : ""} in {edits.size}{" "}
+            row{edits.size !== 1 ? "s" : ""}
           </span>
           <Button
             size="sm"
@@ -285,22 +288,27 @@ export default function ResultsTable({ result, loading, resultSql }: ResultsTabl
             onClick={saveEdits}
             disabled={saving}
           >
-            {saving ? <Loader2 className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3" />}
+            {saving ? (
+              <Loader2 className="h-3 w-3 animate-spin" />
+            ) : (
+              <Save className="h-3 w-3" />
+            )}
             Save
           </Button>
           <Button
             size="sm"
             variant="ghost"
             className="h-6 px-2 text-xs gap-1"
-            onClick={() => { setEdits(new Map()); setSaveError(null); }}
+            onClick={() => {
+              setEdits(new Map());
+              setSaveError(null);
+            }}
             disabled={saving}
           >
             <X className="h-3 w-3" />
             Discard
           </Button>
-          {saveError && (
-            <span className="text-destructive">{saveError}</span>
-          )}
+          {saveError && <span className="text-destructive">{saveError}</span>}
         </div>
       )}
       {result.truncated && (
@@ -309,7 +317,7 @@ export default function ResultsTable({ result, loading, resultSql }: ResultsTabl
         </div>
       )}
       <div className="overflow-auto flex-1">
-        <TooltipProvider>
+        <TooltipProvider skipDelayDuration={0}>
           <table className="min-w-full text-sm border-collapse">
             <thead className="sticky top-0 bg-zinc-50 dark:bg-zinc-900 border-b">
               <tr>
@@ -332,10 +340,13 @@ export default function ResultsTable({ result, loading, resultSql }: ResultsTabl
                       const pendingVal = edits.get(rowIdx)?.get(col.name);
                       const hasPendingEdit = pendingVal !== undefined;
                       const isEditing =
-                        editingCell?.row === rowIdx && editingCell?.col === col.name;
+                        editingCell?.row === rowIdx &&
+                        editingCell?.col === col.name;
 
                       const tooltipValue = hasPendingEdit
-                        ? (pendingVal !== undefined ? String(pendingVal) : null)
+                        ? pendingVal !== undefined
+                          ? String(pendingVal)
+                          : null
                         : display;
 
                       return (
@@ -349,32 +360,41 @@ export default function ResultsTable({ result, loading, resultSql }: ResultsTabl
                             editable && !isEditing ? "cursor-text" : "",
                           ].join(" ")}
                           onDoubleClick={() => {
-                            if (editable) setEditingCell({ row: rowIdx, col: col.name });
+                            if (editable)
+                              setEditingCell({ row: rowIdx, col: col.name });
                           }}
                         >
                           {isEditing ? (
                             <input
                               autoFocus
-                              defaultValue={hasPendingEdit ? (pendingVal ?? "") : (display ?? "")}
+                              defaultValue={
+                                hasPendingEdit
+                                  ? (pendingVal ?? "")
+                                  : (display ?? "")
+                              }
                               className="w-full min-w-[80px] bg-white dark:bg-zinc-800 border border-blue-400 rounded px-1 outline-none font-mono text-xs"
-                              onBlur={(e) => commitEdit(rowIdx, col.name, e.target.value, original)}
+                              onFocus={(e) => e.target.select()}
+                              onBlur={(e) =>
+                                commitEdit(
+                                  rowIdx,
+                                  col.name,
+                                  e.target.value,
+                                  original,
+                                )
+                              }
                               onKeyDown={(e) => {
                                 if (e.key === "Enter") e.currentTarget.blur();
                                 if (e.key === "Escape") setEditingCell(null);
                               }}
                             />
                           ) : tooltipValue !== null ? (
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <span className="truncate block">{tooltipValue}</span>
-                              </TooltipTrigger>
-                              <TooltipContent className="flex items-start max-w-xs">
-                                <span className="break-words whitespace-pre-wrap">{tooltipValue}</span>
-                                <CopyButton value={tooltipValue} />
-                              </TooltipContent>
-                            </Tooltip>
+                            <span className="truncate block">
+                              {tooltipValue}
+                            </span>
                           ) : (
-                            <span className="text-muted-foreground italic">NULL</span>
+                            <span className="text-muted-foreground italic">
+                              NULL
+                            </span>
                           )}
                         </td>
                       );
