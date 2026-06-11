@@ -4,6 +4,7 @@ import { useRef, useState, useCallback, useEffect } from "react";
 import { useTheme } from "next-themes";
 import { useRouter } from "next/navigation";
 import { useEditorFontSize } from "@/hooks/use-editor-font-size";
+import { useSchemaContext } from "@/contexts/schema-context";
 import dynamic from "next/dynamic";
 import type { editor, languages, IRange } from "monaco-editor";
 import { toast } from "sonner";
@@ -21,7 +22,6 @@ import QueryPickerModal from "./QueryPickerModal";
 import QueryLogPanel from "./QueryLogPanel";
 import type { SchemaData, SchemaTable, SchemaRoutine, ColumnInfo, QueryLogEntry } from "@/types/db";
 import {
-  buildSchemaIndex,
   analyzeQueryAt,
   collectDiagnostics,
   resolveQualifier,
@@ -263,14 +263,18 @@ export default function SqlEditor({
   const updateTableDecorationsRef = useRef<() => void>(() => {});
   const abortRef = useRef<AbortController | null>(null);
   const monacoRef = useRef<typeof import("monaco-editor") | null>(null);
+  const { schemaData: contextSchemaData, schemaIndex: contextSchemaIndex } = useSchemaContext();
   const schemaRef = useRef<SchemaData | null>(null);
   const schemaIndexRef = useRef<SchemaIndex | null>(null);
   const providersRegisteredRef = useRef(false);
   const diagTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const idleCallbackRef = useRef<number | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const dragState = useRef<{ startY: number; startHeight: number } | null>(null);
   const prevTabId = useRef(tabId);
   const runQueryRef = useRef<(queryText?: string) => Promise<void>>(async () => {});
+  const wheelHandlerRef = useRef<((e: WheelEvent) => void) | null>(null);
+  const contentListenerRef = useRef<{ dispose(): void } | null>(null);
   const [hasSelection, setHasSelection] = useState(false);
   const [editorHeightPx, setEditorHeightPx] = useState(260);
   const queryStartRef = useRef<number | null>(null);
@@ -280,19 +284,15 @@ export default function SqlEditor({
   const [queryPickerDefaultIndex, setQueryPickerDefaultIndex] = useState(0);
 
 
-  // Load schema for autocomplete once on mount
+  // Sync schema from shared context (fetched once for all tabs)
   useEffect(() => {
-    fetch("/api/schema")
-      .then((r) => r.json())
-      .then((data: SchemaData) => {
-        schemaRef.current = data;
-        schemaIndexRef.current = buildSchemaIndex(data);
-        runDiagnostics();
-        updateTableDecorationsRef.current();
-      })
-      .catch(() => {});
+    if (!contextSchemaData || !contextSchemaIndex) return;
+    schemaRef.current = contextSchemaData;
+    schemaIndexRef.current = contextSchemaIndex;
+    runDiagnostics();
+    updateTableDecorationsRef.current();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [contextSchemaData, contextSchemaIndex]);
 
   const runDiagnostics = useCallback(() => {
     const editorInstance = editorRef.current;
@@ -325,8 +325,26 @@ export default function SqlEditor({
 
   const scheduleDiagnostics = useCallback(() => {
     if (diagTimerRef.current) clearTimeout(diagTimerRef.current);
-    diagTimerRef.current = setTimeout(runDiagnostics, 250);
+    if (idleCallbackRef.current) cancelIdleCallback(idleCallbackRef.current);
+    diagTimerRef.current = setTimeout(() => {
+      if (typeof requestIdleCallback !== "undefined") {
+        idleCallbackRef.current = requestIdleCallback(() => runDiagnostics(), { timeout: 500 });
+      } else {
+        runDiagnostics();
+      }
+    }, 150);
   }, [runDiagnostics]);
+
+  // Clean up editor listeners when this tab unmounts
+  useEffect(() => {
+    return () => {
+      contentListenerRef.current?.dispose();
+      const domNode = editorRef.current?.getDomNode();
+      if (domNode && wheelHandlerRef.current) {
+        domNode.removeEventListener("wheel", wheelHandlerRef.current);
+      }
+    };
+  }, []);
 
   // Sync Monaco content when switching tabs
   useEffect(() => {
@@ -371,6 +389,13 @@ export default function SqlEditor({
 
           const offset = model.getOffsetAt(position);
           const text = model.getValue();
+
+          // Skip suggestions inside line comments or string literals
+          const lineStart = text.lastIndexOf("\n", offset - 1) + 1;
+          const lineUpToCursor = text.slice(lineStart, offset);
+          if (lineUpToCursor.includes("--")) return { suggestions: [] };
+          if ((lineUpToCursor.match(/'/g) ?? []).length % 2 === 1) return { suggestions: [] };
+
           const ctx = analyzeQueryAt(text, offset, index);
 
           const word = model.getWordUntilPosition(position);
@@ -662,7 +687,7 @@ export default function SqlEditor({
     // Debounced diagnostics on every content change.
     const model = editorInstance.getModel();
     if (model) {
-      model.onDidChangeContent((e) => {
+      contentListenerRef.current = model.onDidChangeContent((e) => {
         scheduleDiagnostics();
         updateTableDecorations();
         // When ( is typed (possibly auto-closed to ()), Monaco suppresses the suggest
@@ -727,18 +752,16 @@ export default function SqlEditor({
     // Ctrl+Wheel to zoom font size
     const domNode = editorInstance.getDomNode();
     if (domNode) {
-      domNode.addEventListener(
-        "wheel",
-        (e: WheelEvent) => {
-          if (!e.ctrlKey) return;
-          e.preventDefault();
-          const current = editorInstance.getOption(monacoInstance.editor.EditorOption.fontSize);
-          const next = Math.min(maxFontSize, Math.max(minFontSize, current + (e.deltaY < 0 ? 1 : -1)));
-          editorInstance.updateOptions({ fontSize: next });
-          setFontSize(next);
-        },
-        { passive: false }
-      );
+      const wheelHandler = (e: WheelEvent) => {
+        if (!e.ctrlKey) return;
+        e.preventDefault();
+        const current = editorInstance.getOption(monacoInstance.editor.EditorOption.fontSize);
+        const next = Math.min(maxFontSize, Math.max(minFontSize, current + (e.deltaY < 0 ? 1 : -1)));
+        editorInstance.updateOptions({ fontSize: next });
+        setFontSize(next);
+      };
+      wheelHandlerRef.current = wheelHandler;
+      domNode.addEventListener("wheel", wheelHandler, { passive: false });
     }
   }
 

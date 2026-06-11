@@ -31,7 +31,12 @@ export function useCachedFetch<T>(
           setError(json.error);
           return;
         }
-        if (enabled) cache.current.set(cacheKey, json);
+        if (enabled) {
+          if (cache.current.size >= 100) {
+            cache.current.delete(cache.current.keys().next().value!);
+          }
+          cache.current.set(cacheKey, json);
+        }
         setData(json);
       })
       .catch(() => setError("Failed to fetch"))

@@ -54,36 +54,36 @@ export async function POST(req: NextRequest) {
     }
 
     const pool = await getOrCreatePool(session.sessionId);
-    const rowsAffected: number[] = [];
 
-    for (const update of updates) {
-      const setCols = Object.keys(update.set);
-      const whereCols = Object.keys(update.where);
+    const results = await Promise.all(
+      updates
+        .filter((u) => Object.keys(u.set).length > 0 && Object.keys(u.where).length > 0)
+        .map((update) => {
+          const setCols = Object.keys(update.set);
+          const whereCols = Object.keys(update.where);
+          const request = pool.request();
 
-      if (setCols.length === 0 || whereCols.length === 0) continue;
+          const setClause = setCols
+            .map((col, i) => {
+              const p = `s${i}`;
+              bindValue(request, p, update.set[col]);
+              return `${quoteId(col)} = @${p}`;
+            })
+            .join(", ");
 
-      const request = pool.request();
+          const whereClause = whereCols
+            .map((col, i) => {
+              const p = `w${i}`;
+              bindValue(request, p, update.where[col]);
+              return `${quoteId(col)} = @${p}`;
+            })
+            .join(" AND ");
 
-      const setClause = setCols
-        .map((col, i) => {
-          const p = `s${i}`;
-          bindValue(request, p, update.set[col]);
-          return `${quoteId(col)} = @${p}`;
+          const querySql = `UPDATE ${quoteId(parsed.schema)}.${quoteId(parsed.table)} SET ${setClause} WHERE ${whereClause}`;
+          return request.query(querySql);
         })
-        .join(", ");
-
-      const whereClause = whereCols
-        .map((col, i) => {
-          const p = `w${i}`;
-          bindValue(request, p, update.where[col]);
-          return `${quoteId(col)} = @${p}`;
-        })
-        .join(" AND ");
-
-      const querySql = `UPDATE ${quoteId(parsed.schema)}.${quoteId(parsed.table)} SET ${setClause} WHERE ${whereClause}`;
-      const result = await request.query(querySql);
-      rowsAffected.push(result.rowsAffected[0] ?? 0);
-    }
+    );
+    const rowsAffected = results.map((r) => r.rowsAffected[0] ?? 0);
 
     return NextResponse.json({ rowsAffected });
   } catch (err) {

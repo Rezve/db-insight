@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import {
@@ -96,6 +97,14 @@ export default function ResultsTable({
   const [localRows, setLocalRows] = useState<Record<string, unknown>[]>([]);
   // snapshot used to build WHERE clauses
   const originalRowsRef = useRef<Record<string, unknown>[]>([]);
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  const rowVirtualizer = useVirtualizer({
+    count: localRows.length,
+    getScrollElement: () => scrollRef.current,
+    estimateSize: () => 33,
+    overscan: 15,
+  });
 
   useEffect(() => {
     setEdits(new Map());
@@ -316,7 +325,7 @@ export default function ResultsTable({
           Results limited to 1,000 rows. Total rows affected: {result.rowCount}
         </div>
       )}
-      <div className="overflow-auto flex-1">
+      <div ref={scrollRef} className="overflow-auto flex-1">
         <TooltipProvider skipDelayDuration={0}>
           <table className="min-w-full text-sm border-collapse">
             <thead className="sticky top-0 bg-zinc-50 dark:bg-zinc-900 border-b">
@@ -327,81 +336,73 @@ export default function ResultsTable({
               </tr>
             </thead>
             <tbody>
-              {localRows.map((row, rowIdx) => {
-                const editable = canEdit(row);
+              {(() => {
+                const virtualItems = rowVirtualizer.getVirtualItems();
+                const totalSize = rowVirtualizer.getTotalSize();
+                const paddingTop = virtualItems[0]?.start ?? 0;
+                const paddingBottom = totalSize - (virtualItems.at(-1)?.end ?? 0);
                 return (
-                  <tr
-                    key={rowIdx}
-                    className="border-b hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors"
-                  >
-                    {result.columns.map((col) => {
-                      const original = row[col.name];
-                      const display = displayValue(original);
-                      const pendingVal = edits.get(rowIdx)?.get(col.name);
-                      const hasPendingEdit = pendingVal !== undefined;
-                      const isEditing =
-                        editingCell?.row === rowIdx &&
-                        editingCell?.col === col.name;
-
-                      const tooltipValue = hasPendingEdit
-                        ? pendingVal !== undefined
-                          ? String(pendingVal)
-                          : null
-                        : display;
-
+                  <>
+                    {paddingTop > 0 && <tr><td style={{ height: paddingTop }} /></tr>}
+                    {virtualItems.map((vRow) => {
+                      const rowIdx = vRow.index;
+                      const row = localRows[rowIdx];
+                      const editable = canEdit(row);
                       return (
-                        <td
-                          key={col.name}
-                          className={[
-                            "px-3 py-1.5 font-mono text-xs border-r last:border-r-0 max-w-[300px]",
-                            hasPendingEdit
-                              ? "bg-yellow-50 dark:bg-yellow-900/20"
-                              : "",
-                            editable && !isEditing ? "cursor-text" : "",
-                          ].join(" ")}
-                          onDoubleClick={() => {
-                            if (editable)
-                              setEditingCell({ row: rowIdx, col: col.name });
-                          }}
+                        <tr
+                          key={rowIdx}
+                          className="border-b hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors"
                         >
-                          {isEditing ? (
-                            <input
-                              autoFocus
-                              defaultValue={
-                                hasPendingEdit
-                                  ? (pendingVal ?? "")
-                                  : (display ?? "")
-                              }
-                              className="w-full min-w-[80px] bg-white dark:bg-zinc-800 border border-blue-400 rounded px-1 outline-none font-mono text-xs"
-                              onFocus={(e) => e.target.select()}
-                              onBlur={(e) =>
-                                commitEdit(
-                                  rowIdx,
-                                  col.name,
-                                  e.target.value,
-                                  original,
-                                )
-                              }
-                              onKeyDown={(e) => {
-                                if (e.key === "Enter") e.currentTarget.blur();
-                                if (e.key === "Escape") setEditingCell(null);
-                              }}
-                            />
-                          ) : tooltipValue !== null ? (
-                            <span className="truncate block">
-                              {tooltipValue}
-                            </span>
-                          ) : (
-                            <span className="text-muted-foreground italic">
-                              NULL
-                            </span>
-                          )}
-                        </td>
+                          {result.columns.map((col) => {
+                            const original = row[col.name];
+                            const display = displayValue(original);
+                            const pendingVal = edits.get(rowIdx)?.get(col.name);
+                            const hasPendingEdit = pendingVal !== undefined;
+                            const isEditing =
+                              editingCell?.row === rowIdx &&
+                              editingCell?.col === col.name;
+                            const tooltipValue = hasPendingEdit
+                              ? pendingVal !== undefined ? String(pendingVal) : null
+                              : display;
+                            return (
+                              <td
+                                key={col.name}
+                                className={[
+                                  "px-3 py-1.5 font-mono text-xs border-r last:border-r-0 max-w-[300px]",
+                                  hasPendingEdit ? "bg-yellow-50 dark:bg-yellow-900/20" : "",
+                                  editable && !isEditing ? "cursor-text" : "",
+                                ].join(" ")}
+                                onDoubleClick={() => {
+                                  if (editable) setEditingCell({ row: rowIdx, col: col.name });
+                                }}
+                              >
+                                {isEditing ? (
+                                  <input
+                                    autoFocus
+                                    defaultValue={hasPendingEdit ? (pendingVal ?? "") : (display ?? "")}
+                                    className="w-full min-w-[80px] bg-white dark:bg-zinc-800 border border-blue-400 rounded px-1 outline-none font-mono text-xs"
+                                    onFocus={(e) => e.target.select()}
+                                    onBlur={(e) => commitEdit(rowIdx, col.name, e.target.value, original)}
+                                    onKeyDown={(e) => {
+                                      if (e.key === "Enter") e.currentTarget.blur();
+                                      if (e.key === "Escape") setEditingCell(null);
+                                    }}
+                                  />
+                                ) : tooltipValue !== null ? (
+                                  <span className="truncate block">{tooltipValue}</span>
+                                ) : (
+                                  <span className="text-muted-foreground italic">NULL</span>
+                                )}
+                              </td>
+                            );
+                          })}
+                        </tr>
                       );
                     })}
-                  </tr>
+                    {paddingBottom > 0 && <tr><td style={{ height: paddingBottom }} /></tr>}
+                  </>
                 );
-              })}
+              })()}
             </tbody>
           </table>
         </TooltipProvider>

@@ -367,9 +367,10 @@ export default function EditorTabsManager() {
           onActiveResultTabChange={(activeResultTab) => updateTab(activeTab.id, { activeResultTab: activeResultTab as ResultTabName })}
           databaseName={databaseName}
           logs={activeTab.logs}
-          onAppendLog={(entry: Omit<QueryLogEntry, "id">) =>
-            updateTab(activeTab.id, { logs: [...activeTab.logs, { ...entry, id: crypto.randomUUID() }] })
-          }
+          onAppendLog={(entry: Omit<QueryLogEntry, "id">) => {
+            const next = [...activeTab.logs, { ...entry, id: crypto.randomUUID() }];
+            updateTab(activeTab.id, { logs: next.length > 500 ? next.slice(-500) : next });
+          }}
           onClearLogs={() => updateTab(activeTab.id, { logs: [] })}
         />
       </div>
