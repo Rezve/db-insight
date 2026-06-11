@@ -2,6 +2,18 @@ import type { config as MssqlConfig } from "mssql";
 
 export interface ConnectionConfig extends MssqlConfig {}
 
+export interface QueryLogEntry {
+  id: string;
+  dbName: string;
+  sql: string;
+  timestamp: Date;
+  rowCount: number;
+  totalMs: number;
+  executionMs: number;
+  fetchingMs: number;
+  error?: string;
+}
+
 export interface ConnectionInfo {
   serverName: string;
   databaseName: string;

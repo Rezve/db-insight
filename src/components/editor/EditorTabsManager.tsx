@@ -5,12 +5,15 @@ import { Plus, Upload, Download, X } from "lucide-react";
 import ClosedTabsPanel from "./ClosedTabsPanel";
 import { Button } from "@/components/ui/button";
 import SqlEditor from "./SqlEditor";
+import type { QueryLogEntry } from "@/types/db";
 
 interface QueryResult {
   columns: { name: string; dataType: string }[];
   rows: Record<string, unknown>[];
   rowCount: number;
   durationMs: number;
+  executionMs?: number;
+  fetchingMs?: number;
   truncated: boolean;
   error?: string;
   lineNumber?: number;
@@ -18,7 +21,7 @@ interface QueryResult {
   planXml?: string;
 }
 
-type ResultTabName = "results" | "statistics" | "visualPlan" | "planText" | "compare";
+type ResultTabName = "log" | "results" | "statistics" | "visualPlan" | "planText" | "compare";
 type PlanMode = "off" | "actual" | "estimated";
 
 interface TabState {
@@ -36,6 +39,7 @@ interface TabState {
   statsEnabled: boolean;
   planMode: PlanMode;
   compareEnabled: boolean;
+  logs: QueryLogEntry[];
 }
 
 interface PersistedTab { id: string; name: string; sql: string; }
@@ -68,6 +72,7 @@ function createTab(existingTabs: { name: string }[], name?: string, sql?: string
     statsEnabled: false,
     planMode: "off" as PlanMode,
     compareEnabled: false,
+    logs: [],
   };
 }
 
@@ -78,6 +83,7 @@ export default function EditorTabsManager() {
   const [closedTabNames, setClosedTabNames] = useState<string[]>([]);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
+  const [databaseName, setDatabaseName] = useState("");
   const renameInputRef = useRef<HTMLInputElement | null>(null);
 
   const activeTab = tabs.find((t) => t.id === activeTabId) ?? tabs[0];
@@ -103,6 +109,7 @@ export default function EditorTabsManager() {
             statsEnabled: false,
             planMode: "off" as PlanMode,
             compareEnabled: false,
+            logs: [],
           }));
           setTabs(restored);
           const valid = restored.some((t) => t.id === data.activeTabId);
@@ -114,6 +121,10 @@ export default function EditorTabsManager() {
     fetch("/api/closed-tabs")
       .then((r) => r.json())
       .then((data) => setClosedTabNames((data.closedTabs ?? []).map((t: { name: string }) => t.name)))
+      .catch(() => {});
+    fetch("/api/session-info")
+      .then((r) => r.json())
+      .then((d) => setDatabaseName(d.databaseName ?? ""))
       .catch(() => {});
   }, []);
 
@@ -354,6 +365,12 @@ export default function EditorTabsManager() {
           }
           activeResultTab={activeTab.activeResultTab}
           onActiveResultTabChange={(activeResultTab) => updateTab(activeTab.id, { activeResultTab: activeResultTab as ResultTabName })}
+          databaseName={databaseName}
+          logs={activeTab.logs}
+          onAppendLog={(entry: Omit<QueryLogEntry, "id">) =>
+            updateTab(activeTab.id, { logs: [...activeTab.logs, { ...entry, id: crypto.randomUUID() }] })
+          }
+          onClearLogs={() => updateTab(activeTab.id, { logs: [] })}
         />
       </div>
     </div>

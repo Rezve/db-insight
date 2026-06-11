@@ -43,7 +43,7 @@ export async function POST(req: NextRequest) {
           if (info.message?.trim()) statistics.push(info.message);
         });
         const planResult = await planRequest.query(sql);
-        const durationMs = Date.now() - start;
+        const executionMs = Date.now() - start;
 
         await pool.request().query("SET SHOWPLAN_XML OFF");
 
@@ -59,11 +59,16 @@ export async function POST(req: NextRequest) {
           }
         }
 
+        const durationMs = Date.now() - start;
+        const fetchingMs = durationMs - executionMs;
+
         return NextResponse.json({
           columns: [],
           rows: [],
           rowCount: 0,
           durationMs,
+          executionMs,
+          fetchingMs,
           truncated: false,
           rowsAffected: [],
           statistics,
@@ -75,7 +80,7 @@ export async function POST(req: NextRequest) {
         const durationMs = Date.now() - start;
         const err = queryErr as Error & { lineNumber?: number };
         return NextResponse.json(
-          { error: err.message, lineNumber: err.lineNumber, durationMs, statistics },
+          { error: err.message, lineNumber: err.lineNumber, durationMs, executionMs: durationMs, fetchingMs: 0, statistics },
           { status: 400 }
         );
       }
@@ -87,7 +92,7 @@ export async function POST(req: NextRequest) {
         if (info.message?.trim()) statistics.push(info.message);
       });
       const result = await request.query(sql);
-      const durationMs = Date.now() - start;
+      const executionMs = Date.now() - start;
 
       // mssql recordsets typed as array — cast for safe indexing
       const allRecordsets = Array.isArray(result.recordsets)
@@ -125,11 +130,16 @@ export async function POST(req: NextRequest) {
         }
       }
 
+      const durationMs = Date.now() - start;
+      const fetchingMs = durationMs - executionMs;
+
       return NextResponse.json({
         columns,
         rows,
         rowCount: recordset.length,
         durationMs,
+        executionMs,
+        fetchingMs,
         truncated,
         rowsAffected: result.rowsAffected,
         statistics,
@@ -143,6 +153,8 @@ export async function POST(req: NextRequest) {
           error: err.message,
           lineNumber: err.lineNumber,
           durationMs,
+          executionMs: durationMs,
+          fetchingMs: 0,
           statistics,
         },
         { status: 400 }

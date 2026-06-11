@@ -18,7 +18,8 @@ import QueryPlanVisualizer from "./QueryPlanVisualizer";
 import QueryPlanText from "./QueryPlanText";
 import CompareView from "./CompareView";
 import QueryPickerModal from "./QueryPickerModal";
-import type { SchemaData, SchemaTable, SchemaRoutine, ColumnInfo } from "@/types/db";
+import QueryLogPanel from "./QueryLogPanel";
+import type { SchemaData, SchemaTable, SchemaRoutine, ColumnInfo, QueryLogEntry } from "@/types/db";
 import {
   buildSchemaIndex,
   analyzeQueryAt,
@@ -73,6 +74,10 @@ interface SqlEditorProps {
   onCompareEnabledChange: (v: boolean) => void;
   activeResultTab: string;
   onActiveResultTabChange: (tab: string) => void;
+  databaseName: string;
+  logs: QueryLogEntry[];
+  onAppendLog: (entry: Omit<QueryLogEntry, "id">) => void;
+  onClearLogs: () => void;
 }
 
 function extractTableNameTokens(
@@ -236,6 +241,10 @@ export default function SqlEditor({
   onCompareEnabledChange,
   activeResultTab,
   onActiveResultTabChange,
+  databaseName,
+  logs,
+  onAppendLog,
+  onClearLogs,
 }: SqlEditorProps) {
   function formatDuration(ms: number): string {
     if (ms < 1000) return `${ms}ms`;
@@ -924,6 +933,15 @@ export default function SqlEditor({
           }
         }
         onRunComplete(data, rawSql, nextPrev, nextPrevSql);
+        onAppendLog({
+          dbName: databaseName,
+          sql: rawSql,
+          timestamp: new Date(),
+          rowCount: data.rowCount ?? 0,
+          totalMs: data.durationMs,
+          executionMs: data.executionMs ?? data.durationMs,
+          fetchingMs: data.fetchingMs ?? 0,
+        });
         if (data.truncated) {
           toast.info(`Results truncated to 1,000 rows (total: ${data.rowCount})`);
         }
@@ -938,6 +956,16 @@ export default function SqlEditor({
         }
       } else {
         onResultChange({ ...data, columns: [], rows: [], rowCount: 0, durationMs: 0, truncated: false });
+        onAppendLog({
+          dbName: databaseName,
+          sql: rawSql,
+          timestamp: new Date(),
+          rowCount: 0,
+          totalMs: data.durationMs ?? 0,
+          executionMs: data.durationMs ?? 0,
+          fetchingMs: 0,
+          error: data.error,
+        });
         toast.error(data.error ?? "Query failed");
         onActiveResultTabChange(data.statistics?.length ? "statistics" : "results");
       }
@@ -1134,6 +1162,14 @@ export default function SqlEditor({
       {/* Results / Statistics Tabs */}
       <Tabs value={activeResultTab} onValueChange={onActiveResultTabChange} className="flex flex-col min-h-0" style={{ flex: "1 1 0", overflow: "hidden" }}>
         <TabsList className="mx-3 mt-2 mb-1 w-fit h-8 shrink-0">
+          <TabsTrigger value="log" className="text-xs px-3 h-6 gap-1.5">
+            Log
+            {logs.length > 0 && (
+              <Badge variant="secondary" className="text-[10px] px-1 py-0 h-4 min-w-4">
+                {logs.length}
+              </Badge>
+            )}
+          </TabsTrigger>
           <TabsTrigger value="results" className="text-xs px-3 h-6">Results</TabsTrigger>
           <TabsTrigger value="statistics" className="text-xs px-3 h-6 gap-1.5">
             Statistics
@@ -1165,6 +1201,9 @@ export default function SqlEditor({
             </TabsTrigger>
           )}
         </TabsList>
+        <TabsContent value="log" className="flex-1 overflow-hidden min-h-0 mt-0 data-[state=inactive]:hidden">
+          <QueryLogPanel logs={logs} onClear={onClearLogs} />
+        </TabsContent>
         <TabsContent value="results" className="flex-1 overflow-auto min-h-0 mt-0 data-[state=inactive]:hidden">
           <ResultsTable result={result} loading={running} resultSql={resultSql} />
         </TabsContent>
