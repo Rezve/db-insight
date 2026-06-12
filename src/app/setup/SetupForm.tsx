@@ -160,35 +160,13 @@ export default function SetupForm({ suggestedSecret, dataDir, existingFiles }: P
           <CardTitle className="text-base">Data Directory</CardTitle>
           <CardDescription>
             Where your database, encryption key, and config file are stored.
-            Mount this path as a Docker volume so data persists across container
-            restarts and updates.
           </CardDescription>
         </CardHeader>
-        <CardContent className="space-y-3">
+        <CardContent>
           <div className="space-y-1">
             <Label>Current path</Label>
             <Input readOnly value={dataDir} className="font-mono text-sm" />
           </div>
-          <div className="rounded-md bg-zinc-100 dark:bg-zinc-800 p-3 text-xs font-mono leading-5">
-            <p className="text-zinc-500 font-sans mb-1 text-xs">
-              Docker volume mount example:
-            </p>
-            <p>docker run \</p>
-            <p className="pl-4">-v /your/host/path:/data \</p>
-            <p className="pl-4">-p 3000:3000 \</p>
-            <p className="pl-4">yourdockerhubuser/db-insight</p>
-          </div>
-          <p className="text-xs text-zinc-500">
-            Set{" "}
-            <code className="bg-zinc-100 dark:bg-zinc-800 px-1 rounded">
-              DATA_DIR
-            </code>{" "}
-            env var to use a different path inside the container (default:{" "}
-            <code className="bg-zinc-100 dark:bg-zinc-800 px-1 rounded">
-              /data
-            </code>
-            ).
-          </p>
         </CardContent>
       </Card>
 
