@@ -1,10 +1,11 @@
 "use client";
 
 import { useTheme } from "next-themes";
-import { Sun, Moon, Monitor, Minus, Plus, Database } from "lucide-react";
+import { Sun, Moon, Monitor, Minus, Plus, Database, ArrowUpCircle, Loader2, CheckCircle2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useEditorFontSize } from "@/hooks/use-editor-font-size";
 import { useSessionCacheContext } from "@/contexts/session-cache-context";
+import { useUpdateContext } from "@/contexts/update-context";
 
 const themeOptions = [
   { value: "light", label: "Light", icon: Sun },
@@ -16,6 +17,15 @@ export default function SettingsPage() {
   const { theme, setTheme } = useTheme();
   const { fontSize, setFontSize, min, max } = useEditorFontSize();
   const { enabled, setEnabled } = useSessionCacheContext();
+  const {
+    autoCheckEnabled,
+    setAutoCheckEnabled,
+    updateAvailable,
+    commitsBehind,
+    checking,
+    lastChecked,
+    checkNow,
+  } = useUpdateContext();
 
   return (
     <div className="p-6 max-w-lg">
@@ -109,6 +119,67 @@ export default function SettingsPage() {
           <Database className="h-4 w-4" />
           {enabled ? "Enabled" : "Disabled"}
         </button>
+      </section>
+      <section className="mt-8">
+        <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground mb-1">
+          Updates
+        </h2>
+        <p className="text-sm text-muted-foreground mb-3">
+          Check for new commits on the origin repository. When enabled, the app
+          checks once on startup and shows a badge in the header if updates are
+          available.
+        </p>
+
+        <div className="flex flex-col gap-3">
+          <button
+            onClick={() => setAutoCheckEnabled(!autoCheckEnabled)}
+            className={cn(
+              "flex items-center gap-2 rounded-md px-3 py-2 text-sm border transition-colors w-fit",
+              autoCheckEnabled
+                ? "bg-primary/10 text-primary border-primary/30 font-medium"
+                : "text-zinc-600 dark:text-zinc-400 border-transparent hover:bg-zinc-100 dark:hover:bg-zinc-800"
+            )}
+          >
+            <ArrowUpCircle className="h-4 w-4" />
+            Auto-check on startup: {autoCheckEnabled ? "On" : "Off"}
+          </button>
+
+          <div className="flex items-center gap-3">
+            <button
+              onClick={checkNow}
+              disabled={checking}
+              className={cn(
+                "flex items-center gap-2 rounded-md px-3 py-2 text-sm border transition-colors",
+                checking
+                  ? "opacity-50 cursor-not-allowed border-transparent"
+                  : "text-zinc-600 dark:text-zinc-400 border-transparent hover:bg-zinc-100 dark:hover:bg-zinc-800"
+              )}
+            >
+              {checking ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <ArrowUpCircle className="h-4 w-4" />
+              )}
+              {checking ? "Checking…" : "Check Now"}
+            </button>
+
+            {!checking && lastChecked && (
+              <span className="flex items-center gap-1.5 text-sm">
+                {updateAvailable ? (
+                  <span className="flex items-center gap-1.5 text-amber-600 dark:text-amber-400">
+                    <ArrowUpCircle className="h-4 w-4" />
+                    {commitsBehind} update{commitsBehind > 1 ? "s" : ""} available
+                  </span>
+                ) : (
+                  <span className="flex items-center gap-1.5 text-green-600 dark:text-green-400">
+                    <CheckCircle2 className="h-4 w-4" />
+                    Up to date
+                  </span>
+                )}
+              </span>
+            )}
+          </div>
+        </div>
       </section>
     </div>
   );

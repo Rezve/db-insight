@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { LogOut, Database, Loader2, RefreshCw } from "lucide-react";
 import { useSessionCacheContext } from "@/contexts/session-cache-context";
+import UpdateChecker from "@/components/dashboard/UpdateChecker";
 
 interface HeaderProps {
   serverName: string;
@@ -58,6 +59,7 @@ export default function Header({ serverName, databaseName }: HeaderProps) {
           {databaseName}
         </Badge>
       </div>
+      <UpdateChecker />
       {enabled && (
         <Button
           variant="ghost"

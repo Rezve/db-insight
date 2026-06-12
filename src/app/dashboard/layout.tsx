@@ -9,6 +9,7 @@ import Sidebar from "@/components/dashboard/Sidebar";
 import SidebarSkeleton from "@/components/dashboard/SidebarSkeleton";
 import { SessionCacheProvider } from "@/contexts/session-cache-context";
 import { SchemaProvider } from "@/contexts/schema-context";
+import { UpdateProvider } from "@/contexts/update-context";
 import type { TableInfo, StoredProcedureInfo } from "@/types/db";
 
 async function SidebarLoader({ sessionId }: { sessionId: string }) {
@@ -55,6 +56,7 @@ export default async function DashboardLayout({
   }
 
   return (
+    <UpdateProvider>
     <SessionCacheProvider>
       <SchemaProvider>
         <div className="flex h-screen flex-col overflow-hidden">
@@ -71,5 +73,6 @@ export default async function DashboardLayout({
         </div>
       </SchemaProvider>
     </SessionCacheProvider>
+    </UpdateProvider>
   );
 }
