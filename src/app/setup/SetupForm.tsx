@@ -55,7 +55,7 @@ export default function SetupForm({ suggestedSecret, dataDir, existingFiles }: P
         body: JSON.stringify({ sessionSecret: activeSecret }),
       });
       const data = await res.json();
-      if (!res.ok) {
+      if (!res.ok && res.status !== 409) {
         setError(data.error ?? "Setup failed");
         return;
       }
