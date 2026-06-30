@@ -406,6 +406,50 @@ export default function SqlEditor({
             endColumn: word.endColumn,
           };
 
+          // Compute a replace range covering the full [schema].[table] reference at the cursor
+          // so that accepting a table suggestion replaces the entire existing qualified name
+          // (e.g. [dbo].[OldTable] → [dbo].[NewTable]) instead of appending or double-inserting.
+          // The Monaco dual-range { insert, replace } keeps normal word-based filtering while
+          // using the wider replace range for the actual text substitution.
+          const _tStart = ctx.currentWord.start;
+          let _rStart = _tStart;
+          {
+            let j = _tStart - 1;
+            while (j >= 0 && text[j] === " ") j--;
+            if (j >= 0 && text[j] === ".") {
+              j--;
+              while (j >= 0 && text[j] === " ") j--;
+              if (j >= 0 && text[j] === "]") {
+                while (j >= 0 && text[j] !== "[") j--;
+                _rStart = j;
+              } else if (j >= 0 && /\w/.test(text[j])) {
+                while (j >= 0 && /\w/.test(text[j])) j--;
+                _rStart = j + 1;
+              }
+            }
+          }
+          let _rEnd = _tStart;
+          if (text[_tStart] === "[") {
+            let k = _tStart + 1;
+            while (k < text.length && text[k] !== "]" && text[k] !== "\n") k++;
+            _rEnd = text[k] === "]" ? k + 1 : k;
+          } else {
+            let k = _tStart;
+            while (k < text.length && /\w/.test(text[k])) k++;
+            _rEnd = k;
+          }
+          const _rsp = model.getPositionAt(_rStart);
+          const _rep = model.getPositionAt(_rEnd);
+          const tableRange: IRange =
+            _rStart === _tStart && _rEnd === _tStart
+              ? range
+              : {
+                  startLineNumber: _rsp.lineNumber,
+                  startColumn: _rsp.column,
+                  endLineNumber: _rep.lineNumber,
+                  endColumn: _rep.column,
+                };
+
           const Kind = monacoInstance.languages.CompletionItemKind;
           const snippetRules = monacoInstance.languages.CompletionItemInsertTextRule.InsertAsSnippet;
           const suggestions: languages.CompletionItem[] = [];
@@ -432,9 +476,9 @@ export default function SqlEditor({
               kind: Kind.Class,
               insertText: `[${table.schema}].[${table.name}]`,
               detail: `Table · ${table.columns.length} columns`,
-              filterText: `${table.schema}.${table.name} ${table.name}`.toLowerCase(),
+              filterText: `[${table.schema}].[${table.name}] ${table.name}`.toLowerCase(),
               sortText: `${sortBoost}${table.name}`,
-              range,
+              range: tableRange,
             });
           };
 
