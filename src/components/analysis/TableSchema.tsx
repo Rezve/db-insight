@@ -15,7 +15,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Check, Copy, TableIcon, Code2 } from "lucide-react";
-import type { TableColumnDetail, IndexInfo } from "@/types/analysis";
+import type { TableColumnDetail, IndexInfo, ExtendedColumnDetail } from "@/types/analysis";
 import { buildCreateTableDDL, buildIndexDDL } from "@/lib/sql-queries";
 import { highlightDDL } from "@/lib/highlight-ddl";
 import { formatDataType } from "@/lib/format-data-type";
@@ -29,6 +29,7 @@ export default function TableSchema({ tableName }: TableSchemaProps) {
   const { enabled, cache, refreshCount } = useSessionCacheContext();
   const [columns, setColumns] = useState<TableColumnDetail[]>([]);
   const [indexes, setIndexes] = useState<IndexInfo[]>([]);
+  const [extended, setExtended] = useState<Map<string, ExtendedColumnDetail>>(new Map());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [view, setView] = useState<"table" | "sql">("table");
@@ -40,6 +41,7 @@ export default function TableSchema({ tableName }: TableSchemaProps) {
 
   const colKey = `columns:${tableName}`;
   const idxKey = `indexes:${tableName}`;
+  const extKey = `ext:${tableName}`;
 
   useEffect(() => {
     setLoading(true);
@@ -48,9 +50,11 @@ export default function TableSchema({ tableName }: TableSchemaProps) {
     if (enabled) {
       const cachedCols = cache.current.get(colKey) as { columns: TableColumnDetail[] } | undefined;
       const cachedIdx = cache.current.get(idxKey) as { indexes: IndexInfo[] } | undefined;
-      if (cachedCols !== undefined && cachedIdx !== undefined) {
+      const cachedExt = cache.current.get(extKey) as { columnDetails: ExtendedColumnDetail[] } | undefined;
+      if (cachedCols !== undefined && cachedIdx !== undefined && cachedExt !== undefined) {
         setColumns(cachedCols.columns ?? []);
         setIndexes(cachedIdx.indexes ?? []);
+        setExtended(new Map((cachedExt.columnDetails ?? []).map((e) => [e.columnName, e])));
         setLoading(false);
         return;
       }
@@ -59,8 +63,9 @@ export default function TableSchema({ tableName }: TableSchemaProps) {
     Promise.all([
       fetch(`/api/analysis/columns?table=${encodeURIComponent(tableName)}`).then((r) => r.json()),
       fetch(`/api/analysis/indexes?table=${encodeURIComponent(tableName)}`).then((r) => r.json()),
+      fetch(`/api/schema/column-details?table=${encodeURIComponent(tableName)}`).then((r) => r.json()),
     ])
-      .then(([colData, idxData]) => {
+      .then(([colData, idxData, extData]) => {
         if (colData.error) setError(colData.error);
         else {
           if (enabled) cache.current.set(colKey, colData);
@@ -70,6 +75,10 @@ export default function TableSchema({ tableName }: TableSchemaProps) {
           if (enabled) cache.current.set(idxKey, idxData);
           setIndexes(idxData.indexes ?? []);
         }
+        if (!extData.error) {
+          if (enabled) cache.current.set(extKey, extData);
+          setExtended(new Map((extData.columnDetails ?? []).map((e: ExtendedColumnDetail) => [e.columnName, e])));
+        }
       })
       .catch(() => setError("Failed to load column schema"))
       .finally(() => setLoading(false));
@@ -77,7 +86,7 @@ export default function TableSchema({ tableName }: TableSchemaProps) {
   }, [tableName, enabled, refreshCount]);
 
   function buildFullDDL() {
-    const parts = [buildCreateTableDDL(schemaName, tableOnly, columns)];
+    const parts = [buildCreateTableDDL(schemaName, tableOnly, columns, extended)];
     const indexDDL = buildIndexDDL(schemaName, tableOnly, indexes);
     if (indexDDL) parts.push(indexDDL);
     return parts.join("\n\n");
@@ -137,52 +146,65 @@ export default function TableSchema({ tableName }: TableSchemaProps) {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {columns.map((col) => (
-                <TableRow key={col.columnName}>
-                  <TableCell className="text-center text-xs tabular-nums text-muted-foreground">
-                    {col.ordinal}
-                  </TableCell>
-                  <TableCell className="font-mono text-xs font-medium">
-                    {col.columnName}
-                  </TableCell>
-                  <TableCell className="font-mono text-xs text-muted-foreground">
-                    {formatDataType(col)}
-                  </TableCell>
-                  <TableCell className="text-xs">
-                    {col.isNullable ? (
-                      <span className="text-muted-foreground">NULL</span>
-                    ) : (
-                      <span className="font-medium">NOT NULL</span>
-                    )}
-                  </TableCell>
-                  <TableCell className="font-mono text-xs text-muted-foreground max-w-[160px] truncate">
-                    {col.columnDefault ?? <span className="text-muted-foreground/50">—</span>}
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex gap-1 flex-wrap">
-                      {col.isPrimaryKey && (
-                        <Badge className="text-[10px]">PK</Badge>
+              {columns.map((col) => {
+                const ext = extended.get(col.columnName);
+                return (
+                  <TableRow key={col.columnName}>
+                    <TableCell className="text-center text-xs tabular-nums text-muted-foreground">
+                      {col.ordinal}
+                    </TableCell>
+                    <TableCell className="font-mono text-xs font-medium">
+                      {col.columnName}
+                    </TableCell>
+                    <TableCell className="font-mono text-xs text-muted-foreground">
+                      {formatDataType(col)}
+                    </TableCell>
+                    <TableCell className="text-xs">
+                      {col.isNullable ? (
+                        <span className="text-muted-foreground">NULL</span>
+                      ) : (
+                        <span className="font-medium">NOT NULL</span>
                       )}
-                      {col.fkTable && (
-                        <Badge variant="secondary" className="text-[10px]">FK</Badge>
+                    </TableCell>
+                    <TableCell className="font-mono text-xs text-muted-foreground max-w-[160px] truncate">
+                      {ext?.isComputed ? (
+                        <span title={ext.computedDefinition ?? undefined}>
+                          {ext.computedDefinition}
+                          {ext.isPersisted ? " (PERSISTED)" : ""}
+                        </span>
+                      ) : (
+                        col.columnDefault ?? <span className="text-muted-foreground/50">—</span>
                       )}
-                      {col.isIdentity && (
-                        <Badge variant="outline" className="text-[10px]">Identity</Badge>
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex gap-1 flex-wrap">
+                        {col.isPrimaryKey && (
+                          <Badge className="text-[10px]">PK</Badge>
+                        )}
+                        {col.fkTable && (
+                          <Badge variant="secondary" className="text-[10px]">FK</Badge>
+                        )}
+                        {col.isIdentity && (
+                          <Badge variant="outline" className="text-[10px]">Identity</Badge>
+                        )}
+                        {ext?.isComputed && (
+                          <Badge variant="secondary" className="text-[10px]">Computed</Badge>
+                        )}
+                      </div>
+                    </TableCell>
+                    <TableCell className="font-mono text-xs text-muted-foreground">
+                      {col.fkTable ? (
+                        <span>
+                          {col.fkSchema}.{col.fkTable}
+                          <span className="text-muted-foreground/60"> ({col.fkColumn})</span>
+                        </span>
+                      ) : (
+                        <span className="text-muted-foreground/50">—</span>
                       )}
-                    </div>
-                  </TableCell>
-                  <TableCell className="font-mono text-xs text-muted-foreground">
-                    {col.fkTable ? (
-                      <span>
-                        {col.fkSchema}.{col.fkTable}
-                        <span className="text-muted-foreground/60"> ({col.fkColumn})</span>
-                      </span>
-                    ) : (
-                      <span className="text-muted-foreground/50">—</span>
-                    )}
-                  </TableCell>
-                </TableRow>
-              ))}
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
             </TableBody>
           </Table>
         </CardContent>

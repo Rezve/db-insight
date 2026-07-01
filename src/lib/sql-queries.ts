@@ -382,7 +382,8 @@ FROM sys.dm_os_sys_info
 export function buildCreateTableDDL(
   schema: string,
   tableName: string,
-  columns: import("@/types/analysis").TableColumnDetail[]
+  columns: import("@/types/analysis").TableColumnDetail[],
+  extended?: Map<string, import("@/types/analysis").ExtendedColumnDetail>
 ): string {
   function fmtType(col: import("@/types/analysis").TableColumnDetail): string {
     const t = col.dataType.toLowerCase();
@@ -400,6 +401,12 @@ export function buildCreateTableDDL(
   }
 
   const lines: string[] = columns.map((col) => {
+    const ext = extended?.get(col.columnName);
+    if (ext?.isComputed && ext.computedDefinition) {
+      const parts = [`  ${quoteId(col.columnName)}`, `AS (${ext.computedDefinition})`];
+      if (ext.isPersisted) parts.push("PERSISTED");
+      return parts.join(" ");
+    }
     const parts: string[] = [`  ${quoteId(col.columnName)}`, fmtType(col)];
     if (col.isIdentity) parts.push("IDENTITY(1,1)");
     parts.push(col.isNullable ? "NULL" : "NOT NULL");
@@ -407,7 +414,7 @@ export function buildCreateTableDDL(
     return parts.join(" ");
   });
 
-  const pkCols = columns.filter((c) => c.isPrimaryKey);
+  const pkCols = columns.filter((c) => c.isPrimaryKey && !extended?.get(c.columnName)?.isComputed);
   if (pkCols.length > 0) {
     const pkColList = pkCols.map((c) => quoteId(c.columnName)).join(", ");
     lines.push(`  CONSTRAINT ${quoteId("PK_" + tableName)} PRIMARY KEY (${pkColList})`);
