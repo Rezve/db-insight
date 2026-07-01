@@ -1,9 +1,11 @@
 "use client";
 
-import { useState } from "react";
-import { useTheme } from "next-themes";
+import { useEffect, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import { Copy, Check } from "lucide-react";
+import type { editor } from "monaco-editor";
+import { useEditorThemeContext } from "@/contexts/editor-theme-context";
+import { ensureMonacoThemeLoaded } from "@/lib/editor-themes";
 
 const MonacoEditor = dynamic(() => import("@monaco-editor/react"), { ssr: false });
 
@@ -12,8 +14,31 @@ interface SpCodeViewerProps {
 }
 
 export default function SpCodeViewer({ definition }: SpCodeViewerProps) {
-  const { resolvedTheme } = useTheme();
+  const { monacoThemeId } = useEditorThemeContext();
+  const monacoRef = useRef<typeof import("monaco-editor") | null>(null);
   const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    const monacoInstance = monacoRef.current;
+    if (!monacoInstance) return;
+    let cancelled = false;
+    ensureMonacoThemeLoaded(monacoInstance, monacoThemeId).then(() => {
+      if (!cancelled) monacoInstance.editor.setTheme(monacoThemeId);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [monacoThemeId]);
+
+  function handleEditorDidMount(
+    _editorInstance: editor.IStandaloneCodeEditor,
+    monacoInstance: typeof import("monaco-editor")
+  ) {
+    monacoRef.current = monacoInstance;
+    ensureMonacoThemeLoaded(monacoInstance, monacoThemeId).then(() => {
+      monacoInstance.editor.setTheme(monacoThemeId);
+    });
+  }
 
   const handleCopy = async () => {
     await navigator.clipboard.writeText(definition);
@@ -44,7 +69,8 @@ export default function SpCodeViewer({ definition }: SpCodeViewerProps) {
         height="100%"
         language="sql"
         value={definition}
-        theme={resolvedTheme === "dark" ? "vs-dark" : "vs"}
+        theme={monacoThemeId}
+        onMount={handleEditorDidMount}
         options={{
           readOnly: true,
           minimap: { enabled: false },

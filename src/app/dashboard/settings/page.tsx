@@ -4,8 +4,18 @@ import { useTheme } from "next-themes";
 import { Sun, Moon, Monitor, Minus, Plus, Database, ArrowUpCircle, Loader2, CheckCircle2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useEditorFontSize } from "@/hooks/use-editor-font-size";
+import { useEditorThemeContext } from "@/contexts/editor-theme-context";
 import { useSessionCacheContext } from "@/contexts/session-cache-context";
 import { useUpdateContext } from "@/contexts/update-context";
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectLabel,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 const themeOptions = [
   { value: "light", label: "Light", icon: Sun },
@@ -16,6 +26,9 @@ const themeOptions = [
 export default function SettingsPage() {
   const { theme, setTheme } = useTheme();
   const { fontSize, setFontSize, min, max } = useEditorFontSize();
+  const { themeId, setThemeId, options: editorThemeOptions } = useEditorThemeContext();
+  const lightThemes = editorThemeOptions.filter((t) => t.id !== "auto" && t.kind === "light");
+  const darkThemes = editorThemeOptions.filter((t) => t.id !== "auto" && t.kind === "dark");
   const { enabled, setEnabled } = useSessionCacheContext();
   const {
     autoCheckEnabled,
@@ -95,6 +108,39 @@ export default function SettingsPage() {
             <Plus className="h-4 w-4" />
           </button>
         </div>
+      </section>
+
+      <section className="mt-8">
+        <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground mb-1">
+          Editor Color Theme
+        </h2>
+        <p className="text-sm text-muted-foreground mb-3">
+          Choose the syntax highlighting theme for the SQL editor and code viewer.
+        </p>
+        <Select value={themeId} onValueChange={setThemeId}>
+          <SelectTrigger className="w-64">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="auto">Auto (match app theme)</SelectItem>
+            <SelectGroup>
+              <SelectLabel>Light</SelectLabel>
+              {lightThemes.map(({ id, label }) => (
+                <SelectItem key={id} value={id}>
+                  {label}
+                </SelectItem>
+              ))}
+            </SelectGroup>
+            <SelectGroup>
+              <SelectLabel>Dark</SelectLabel>
+              {darkThemes.map(({ id, label }) => (
+                <SelectItem key={id} value={id}>
+                  {label}
+                </SelectItem>
+              ))}
+            </SelectGroup>
+          </SelectContent>
+        </Select>
       </section>
 
       <section className="mt-8">

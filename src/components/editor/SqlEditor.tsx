@@ -1,9 +1,10 @@
 "use client";
 
 import { useRef, useState, useCallback, useEffect } from "react";
-import { useTheme } from "next-themes";
 import { useRouter } from "next/navigation";
 import { useEditorFontSize } from "@/hooks/use-editor-font-size";
+import { useEditorThemeContext } from "@/contexts/editor-theme-context";
+import { ensureMonacoThemeLoaded } from "@/lib/editor-themes";
 import { useSchemaContext } from "@/contexts/schema-context";
 import dynamic from "next/dynamic";
 import type { editor, languages, IRange } from "monaco-editor";
@@ -255,9 +256,9 @@ export default function SqlEditor({
     return `${s}s ${rem}ms`;
   }
 
-  const { resolvedTheme } = useTheme();
   const router = useRouter();
   const { fontSize: editorFontSize, setFontSize, min: minFontSize, max: maxFontSize } = useEditorFontSize();
+  const { monacoThemeId } = useEditorThemeContext();
   const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null);
   const tableDecorationsRef = useRef<editor.IEditorDecorationsCollection | null>(null);
   const updateTableDecorationsRef = useRef<() => void>(() => {});
@@ -355,6 +356,19 @@ export default function SqlEditor({
       prevTabId.current = tabId;
     }
   }, [tabId, sql]);
+
+  // Apply the selected editor color theme, loading it on demand if needed
+  useEffect(() => {
+    const monacoInstance = monacoRef.current;
+    if (!monacoInstance) return;
+    let cancelled = false;
+    ensureMonacoThemeLoaded(monacoInstance, monacoThemeId).then(() => {
+      if (!cancelled) monacoInstance.editor.setTheme(monacoThemeId);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [monacoThemeId]);
 
   useEffect(() => {
     if (!running) return;
@@ -686,6 +700,10 @@ export default function SqlEditor({
     editorRef.current = editorInstance;
     monacoRef.current = monacoInstance;
     registerProviders(monacoInstance);
+
+    ensureMonacoThemeLoaded(monacoInstance, monacoThemeId).then(() => {
+      monacoInstance.editor.setTheme(monacoThemeId);
+    });
 
     const initialLineCount = editorInstance.getModel()?.getLineCount() ?? 1;
     editorInstance.revealLine(initialLineCount);
@@ -1200,7 +1218,7 @@ export default function SqlEditor({
           defaultValue={sql}
           onChange={(v) => onSqlChange(v ?? "")}
           onMount={handleEditorDidMount}
-          theme={resolvedTheme === "dark" ? "vs-dark" : "vs"}
+          theme={monacoThemeId}
           options={{
             minimap: { enabled: false },
             fontSize: editorFontSize,

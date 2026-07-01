@@ -10,6 +10,7 @@ import SidebarSkeleton from "@/components/dashboard/SidebarSkeleton";
 import { SessionCacheProvider } from "@/contexts/session-cache-context";
 import { SchemaProvider } from "@/contexts/schema-context";
 import { UpdateProvider } from "@/contexts/update-context";
+import { EditorThemeProvider } from "@/contexts/editor-theme-context";
 import type { TableInfo, StoredProcedureInfo } from "@/types/db";
 
 async function SidebarLoader({ sessionId }: { sessionId: string }) {
@@ -59,18 +60,20 @@ export default async function DashboardLayout({
     <UpdateProvider>
     <SessionCacheProvider>
       <SchemaProvider>
-        <div className="flex h-screen flex-col overflow-hidden">
-          <Header
-            serverName={session.serverName ?? "Unknown server"}
-            databaseName={session.databaseName ?? "Unknown database"}
-          />
-          <div className="flex flex-1 overflow-hidden">
-            <Suspense fallback={<SidebarSkeleton />}>
-              <SidebarLoader sessionId={session.sessionId} />
-            </Suspense>
-            <main className="flex-1 overflow-auto bg-background">{children}</main>
+        <EditorThemeProvider>
+          <div className="flex h-screen flex-col overflow-hidden">
+            <Header
+              serverName={session.serverName ?? "Unknown server"}
+              databaseName={session.databaseName ?? "Unknown database"}
+            />
+            <div className="flex flex-1 overflow-hidden">
+              <Suspense fallback={<SidebarSkeleton />}>
+                <SidebarLoader sessionId={session.sessionId} />
+              </Suspense>
+              <main className="flex-1 overflow-auto bg-background">{children}</main>
+            </div>
           </div>
-        </div>
+        </EditorThemeProvider>
       </SchemaProvider>
     </SessionCacheProvider>
     </UpdateProvider>
