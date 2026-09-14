@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/session";
-import { executeQuery } from "@/lib/db";
-import { SQL_GET_SP_DEFINITION } from "@/lib/sql-queries";
-import sql from "mssql";
+import { getSessionDriver, runIntrospection } from "@/lib/db";
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
@@ -19,13 +17,10 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const rows = await executeQuery<{ definition: string }>(
+    const driver = getSessionDriver(session.sessionId);
+    const rows = await runIntrospection<{ definition: string }>(
       session.sessionId,
-      SQL_GET_SP_DEFINITION,
-      {
-        schema: { type: sql.NVarChar(128), value: schema },
-        name: { type: sql.NVarChar(128), value: name },
-      }
+      driver.introspection.spDefinition(schema, name)
     );
 
     if (rows.length === 0) {

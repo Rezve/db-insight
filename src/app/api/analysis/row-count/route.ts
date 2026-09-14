@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/session";
-import { executeQuery } from "@/lib/db";
-import { SQL_ROW_COUNT_FAST, buildRowCountExact } from "@/lib/sql-queries";
-import sql from "mssql";
+import { getSessionDriver, runIntrospection } from "@/lib/db";
 
 export async function GET(req: NextRequest) {
   try {
@@ -19,23 +17,21 @@ export async function GET(req: NextRequest) {
 
     const [schema, tableName] = table.split(".", 2);
 
+    const driver = getSessionDriver(session.sessionId);
+
     // Fast metadata count first
-    const fastRows = await executeQuery<{ rowCount: number }>(
+    const fastRows = await runIntrospection<{ rowCount: number }>(
       session.sessionId,
-      SQL_ROW_COUNT_FAST,
-      {
-        schema: { type: sql.NVarChar(128), value: schema },
-        tableName: { type: sql.NVarChar(128), value: tableName },
-      }
+      driver.introspection.rowCountFast(schema, tableName)
     );
 
     const fastCount = fastRows[0]?.rowCount;
 
-    // Fall back to COUNT_BIG if metadata returns 0 (could be a view or empty)
+    // Fall back to an exact count if metadata returns nothing (view, or no stats yet)
     if (!fastCount && fastCount !== 0) {
-      const exactRows = await executeQuery<{ rowCount: number | bigint }>(
+      const exactRows = await runIntrospection<{ rowCount: number | bigint }>(
         session.sessionId,
-        buildRowCountExact(schema, tableName)
+        driver.introspection.rowCountExact(schema, tableName)
       );
       const rowCount = Number(exactRows[0]?.rowCount ?? 0);
       return NextResponse.json({ rowCount, tableName: table, source: "exact" });

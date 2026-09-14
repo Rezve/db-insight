@@ -11,6 +11,7 @@ import {
   AlertTriangle, Server, Clock, TrendingUp, Hash,
 } from "lucide-react";
 import type { DatabaseSummary } from "@/types/db";
+import { useEngine } from "@/contexts/engine-context";
 
 function formatSize(sizeGB: number): string {
   if (sizeGB >= 1) return `${sizeGB.toFixed(2)} GB`;
@@ -78,6 +79,7 @@ function StatCardSkeleton() {
 }
 
 export default function DatabaseSummary() {
+  const { capabilities, engineLabel } = useEngine();
   const { enabled } = useSessionCacheContext();
   const { data, loading: _loading, error } = useCachedFetch<DatabaseSummary>(
     "summary:db",
@@ -140,7 +142,7 @@ export default function DatabaseSummary() {
             icon={<Server className={iconCls} />}
           />
           <StatCard
-            title="SQL Server Version"
+            title={`${engineLabel} Version`}
             value={<span className="text-base font-mono">{data.sqlVersion}</span>}
             icon={<Server className={iconCls} />}
           />
@@ -189,21 +191,28 @@ export default function DatabaseSummary() {
       <div>
         <SectionHeading>Activity</SectionHeading>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          <StatCard
-            title="Index Seeks"
-            value={formatNumber(data.totalSeeks)}
-            icon={<Activity className={iconCls} />}
-          />
-          <StatCard
-            title="Index Scans"
-            value={formatNumber(data.totalScans)}
-            icon={<Activity className={iconCls} />}
-          />
-          <StatCard
-            title="Index Lookups"
-            value={formatNumber(data.totalLookups)}
-            icon={<Activity className={iconCls} />}
-          />
+          {capabilities.indexUsageStats && (
+            <>
+              {/* Only SQL Server separates seeks from scans. */}
+              {capabilities.missingIndexAdvisor && (
+                <StatCard
+                  title="Index Seeks"
+                  value={formatNumber(data.totalSeeks)}
+                  icon={<Activity className={iconCls} />}
+                />
+              )}
+              <StatCard
+                title="Index Scans"
+                value={formatNumber(data.totalScans)}
+                icon={<Activity className={iconCls} />}
+              />
+              <StatCard
+                title="Index Lookups"
+                value={formatNumber(data.totalLookups)}
+                icon={<Activity className={iconCls} />}
+              />
+            </>
+          )}
           <StatCard
             title="Server Uptime"
             value={formatUptime(data.uptimeMinutes)}
@@ -212,7 +221,7 @@ export default function DatabaseSummary() {
           />
         </div>
         <p className="text-xs text-muted-foreground mt-2">
-          Activity counters reset on SQL Server restart.
+          Activity counters reset when {engineLabel} restarts.
         </p>
       </div>
 
@@ -225,26 +234,32 @@ export default function DatabaseSummary() {
             value={formatNumber(data.totalIndexes)}
             icon={<BarChart2 className={iconCls} />}
           />
-          <StatCard
-            title="Disabled Indexes"
-            value={formatNumber(data.disabledIndexes)}
-            icon={<AlertTriangle className={iconCls} />}
-            variant={data.disabledIndexes > 0 ? "danger" : "default"}
-          />
-          <StatCard
-            title="Unused Indexes"
-            value={formatNumber(data.unusedIndexCount)}
-            subtitle="no seeks, scans, or lookups"
-            icon={<AlertTriangle className={iconCls} />}
-            variant={data.unusedIndexCount > 0 ? "warning" : "default"}
-          />
-          <StatCard
-            title="Missing Index Suggestions"
-            value={formatNumber(data.missingIndexCount)}
-            subtitle={`across ${data.tablesWithMissingIndexes} tables`}
-            icon={<AlertTriangle className={iconCls} />}
-            variant={data.missingIndexCount > 0 ? "warning" : "default"}
-          />
+          {capabilities.indexDisableRebuild && (
+            <StatCard
+              title="Disabled Indexes"
+              value={formatNumber(data.disabledIndexes)}
+              icon={<AlertTriangle className={iconCls} />}
+              variant={data.disabledIndexes > 0 ? "danger" : "default"}
+            />
+          )}
+          {capabilities.indexUsageStats && (
+            <StatCard
+              title="Unused Indexes"
+              value={formatNumber(data.unusedIndexCount)}
+              subtitle="never read"
+              icon={<AlertTriangle className={iconCls} />}
+              variant={data.unusedIndexCount > 0 ? "warning" : "default"}
+            />
+          )}
+          {capabilities.missingIndexAdvisor && (
+            <StatCard
+              title="Missing Index Suggestions"
+              value={formatNumber(data.missingIndexCount)}
+              subtitle={`across ${data.tablesWithMissingIndexes} tables`}
+              icon={<AlertTriangle className={iconCls} />}
+              variant={data.missingIndexCount > 0 ? "warning" : "default"}
+            />
+          )}
         </div>
       </div>
 

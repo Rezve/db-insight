@@ -28,8 +28,10 @@ import {
   resolveQualifier,
   tokenize,
   type SqlToken,
+  setKeywordDialect,
   type SchemaIndex,
 } from "@/lib/sql-intellisense";
+import { useEngine } from "@/contexts/engine-context";
 
 // Monaco must not be SSR'd
 const MonacoEditor = dynamic(() => import("@monaco-editor/react"), { ssr: false });
@@ -45,6 +47,8 @@ interface QueryResult {
   rowsAffected?: number[];
   statistics?: string[];
   planXml?: string;
+  /** EXPLAIN output for engines without a structured plan model. */
+  planText?: string;
 }
 
 interface SqlEditorProps {
@@ -247,6 +251,13 @@ export default function SqlEditor({
   onAppendLog,
   onClearLogs,
 }: SqlEditorProps) {
+  const { capabilities, formatterDialect } = useEngine();
+
+  // Autocomplete keywords follow the connected engine's dialect.
+  useEffect(() => {
+    setKeywordDialect(formatterDialect);
+  }, [formatterDialect]);
+
   function formatDuration(ms: number): string {
     if (ms < 1000) return `${ms}ms`;
     const m = Math.floor(ms / 60000);
@@ -847,7 +858,7 @@ export default function SqlEditor({
     let formatted: string;
     try {
       formatted = formatSql(rawSql, {
-        language: "tsql",
+        language: formatterDialect,
         tabWidth: 2,
         keywordCase: "upper",
         expressionWidth: 100,
@@ -873,9 +884,9 @@ export default function SqlEditor({
   }
 
   function splitSqlQueries(text: string): { text: string; startLine: number }[] {
-    // Split on GO batch separator first (T-SQL specific)
+    // GO is a SQL Server batch separator; Postgres and MySQL split on semicolons only.
     const goPattern = /^\s*GO\s*$/im;
-    if (goPattern.test(text)) {
+    if (formatterDialect === "tsql" && goPattern.test(text)) {
       const results: { text: string; startLine: number }[] = [];
       const globalGo = /^\s*GO\s*$/gim;
       let lastEnd = 0;
@@ -971,11 +982,13 @@ export default function SqlEditor({
     // Build SQL with optional wrappers (stats and/or plan)
     const prefixParts: string[] = [];
     const suffixParts: string[] = [];
-    if (statsEnabled) {
+    if (statsEnabled && capabilities.sessionStatistics) {
       prefixParts.push("SET STATISTICS IO ON;", "SET STATISTICS TIME ON;");
       suffixParts.unshift("SET STATISTICS IO OFF;", "SET STATISTICS TIME OFF;");
     }
-    if (planMode === "actual") {
+    // Only SQL Server returns its plan inline with the results; other engines
+    // are asked for one server-side via EXPLAIN.
+    if (planMode === "actual" && capabilities.queryPlan === "showplan-xml") {
       prefixParts.push("SET STATISTICS XML ON;");
       suffixParts.unshift("SET STATISTICS XML OFF;");
     }
@@ -1032,9 +1045,11 @@ export default function SqlEditor({
         }
         if (compareEnabled && nextPrev) {
           onActiveResultTabChange("compare");
-        } else if (data.planXml) {
-          onActiveResultTabChange("visualPlan");
-        } else if (data.statistics?.length) {
+        } else if (data.planXml || data.planText) {
+          onActiveResultTabChange(
+            capabilities.queryPlan === "showplan-xml" ? "visualPlan" : "planText"
+          );
+        } else if (data.statistics?.length && capabilities.sessionStatistics) {
           onActiveResultTabChange("statistics");
         } else {
           onActiveResultTabChange("results");
@@ -1052,7 +1067,9 @@ export default function SqlEditor({
           error: data.error,
         });
         toast.error(data.error ?? "Query failed");
-        onActiveResultTabChange(data.statistics?.length ? "statistics" : "results");
+        onActiveResultTabChange(
+          data.statistics?.length && capabilities.sessionStatistics ? "statistics" : "results"
+        );
       }
     } catch (err) {
       if (err instanceof Error && err.name === "AbortError") {
@@ -1256,25 +1273,31 @@ export default function SqlEditor({
             )}
           </TabsTrigger>
           <TabsTrigger value="results" className="text-xs px-3 h-6">Results</TabsTrigger>
-          <TabsTrigger value="statistics" className="text-xs px-3 h-6 gap-1.5">
-            Statistics
-            {result?.statistics?.length ? (
-              <Badge variant="secondary" className="text-[10px] px-1 py-0 h-4 min-w-4">
-                {result.statistics.length}
-              </Badge>
-            ) : null}
-          </TabsTrigger>
-          <TabsTrigger value="visualPlan" className="text-xs px-3 h-6 gap-1.5">
-            Visual Plan
-            {result?.planXml ? (
-              <Badge variant="secondary" className="text-[10px] px-1 py-0 h-4 min-w-4">
-                <Network className="h-2.5 w-2.5" />
-              </Badge>
-            ) : null}
-          </TabsTrigger>
-          <TabsTrigger value="planText" className="text-xs px-3 h-6">
-            Plan Text
-          </TabsTrigger>
+          {capabilities.sessionStatistics && (
+            <TabsTrigger value="statistics" className="text-xs px-3 h-6 gap-1.5">
+              Statistics
+              {result?.statistics?.length ? (
+                <Badge variant="secondary" className="text-[10px] px-1 py-0 h-4 min-w-4">
+                  {result.statistics.length}
+                </Badge>
+              ) : null}
+            </TabsTrigger>
+          )}
+          {capabilities.queryPlan === "showplan-xml" && (
+            <TabsTrigger value="visualPlan" className="text-xs px-3 h-6 gap-1.5">
+              Visual Plan
+              {result?.planXml ? (
+                <Badge variant="secondary" className="text-[10px] px-1 py-0 h-4 min-w-4">
+                  <Network className="h-2.5 w-2.5" />
+                </Badge>
+              ) : null}
+            </TabsTrigger>
+          )}
+          {capabilities.queryPlan !== false && (
+            <TabsTrigger value="planText" className="text-xs px-3 h-6">
+              Plan Text
+            </TabsTrigger>
+          )}
           {compareEnabled && (
             <TabsTrigger value="compare" className="text-xs px-3 h-6 gap-1.5">
               Compare
@@ -1292,18 +1315,34 @@ export default function SqlEditor({
         <TabsContent value="results" className="flex-1 overflow-auto min-h-0 mt-0 data-[state=inactive]:hidden">
           <ResultsTable result={result} loading={running} resultSql={resultSql} />
         </TabsContent>
-        <TabsContent value="statistics" className="flex-1 overflow-auto min-h-0 mt-0 data-[state=inactive]:hidden">
-          <StatisticsPanel
-            messages={result?.statistics ?? []}
-            onEnable={statsEnabled ? undefined : () => onStatsEnabledChange(true)}
-          />
-        </TabsContent>
-        <TabsContent value="visualPlan" className="flex-1 overflow-hidden min-h-0 mt-0 data-[state=inactive]:hidden">
-          <QueryPlanVisualizer planXml={result?.planXml} />
-        </TabsContent>
-        <TabsContent value="planText" className="flex-1 overflow-hidden min-h-0 mt-0 data-[state=inactive]:hidden">
-          <QueryPlanText planXml={result?.planXml} />
-        </TabsContent>
+        {capabilities.sessionStatistics && (
+          <TabsContent value="statistics" className="flex-1 overflow-auto min-h-0 mt-0 data-[state=inactive]:hidden">
+            <StatisticsPanel
+              messages={result?.statistics ?? []}
+              onEnable={statsEnabled ? undefined : () => onStatsEnabledChange(true)}
+            />
+          </TabsContent>
+        )}
+        {capabilities.queryPlan === "showplan-xml" && (
+          <TabsContent value="visualPlan" className="flex-1 overflow-hidden min-h-0 mt-0 data-[state=inactive]:hidden">
+            <QueryPlanVisualizer planXml={result?.planXml} />
+          </TabsContent>
+        )}
+        {capabilities.queryPlan !== false && (
+          <TabsContent value="planText" className="flex-1 overflow-hidden min-h-0 mt-0 data-[state=inactive]:hidden">
+            {capabilities.queryPlan === "showplan-xml" ? (
+              <QueryPlanText planXml={result?.planXml} />
+            ) : result?.planText ? (
+              <pre className="h-full overflow-auto p-3 text-xs font-mono whitespace-pre">
+                {result.planText}
+              </pre>
+            ) : (
+              <p className="p-3 text-xs text-muted-foreground">
+                Run a query with the plan enabled to see its EXPLAIN output.
+              </p>
+            )}
+          </TabsContent>
+        )}
         {compareEnabled && (
           <TabsContent value="compare" className="flex-1 overflow-auto min-h-0 mt-0 data-[state=inactive]:hidden">
             <CompareView

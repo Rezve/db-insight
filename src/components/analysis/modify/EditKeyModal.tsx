@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { AlertTriangle } from "lucide-react";
 import type { PrimaryKeyDetail } from "@/types/analysis";
-import { buildDropConstraintDDL } from "@/lib/sql-queries";
+import { useEngine } from "@/contexts/engine-context";
 import SqlPreviewDialog from "./SqlPreviewDialog";
 
 interface EditKeyModalProps {
@@ -31,11 +31,12 @@ export default function EditKeyModal({
   pk,
   onSuccess,
 }: EditKeyModalProps) {
+  const { ddl } = useEngine();
   const [previewSql, setPreviewSql] = useState("");
   const [previewOpen, setPreviewOpen] = useState(false);
 
   function handleDropPK() {
-    setPreviewSql(buildDropConstraintDDL(schema, tableName, pk.constraintName));
+    setPreviewSql(ddl.dropConstraint(schema, tableName, pk.constraintName));
     setPreviewOpen(true);
   }
 

@@ -23,7 +23,7 @@ export default async function ConnectPage() {
             DB Analysis Tool
           </h1>
           <p className="text-sm text-zinc-500 mt-1">
-            Connect to your Azure SQL / SQL Server database
+            Connect to your database
           </p>
         </div>
         <ConnectionForm />

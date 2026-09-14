@@ -1,7 +1,3 @@
-import type { config as MssqlConfig } from "mssql";
-
-export interface ConnectionConfig extends MssqlConfig {}
-
 export interface QueryLogEntry {
   id: string;
   dbName: string;
@@ -113,4 +109,6 @@ export interface QueryResult {
   lineNumber?: number;
   statistics?: string[];
   planXml?: string;
+  /** EXPLAIN output for engines without a structured plan model. */
+  planText?: string;
 }

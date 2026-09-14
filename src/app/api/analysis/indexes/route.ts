@@ -1,9 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/session";
-import { executeQuery } from "@/lib/db";
-import { SQL_INDEX_INFO, SQL_INDEX_SIZES } from "@/lib/sql-queries";
+import { getSessionDriver, runIntrospection } from "@/lib/db";
 import type { IndexInfo } from "@/types/analysis";
-import sql from "mssql";
 
 export async function GET(req: NextRequest) {
   try {
@@ -20,13 +18,10 @@ export async function GET(req: NextRequest) {
 
     const [schema, tableName] = table.split(".", 2);
 
-    const params = {
-      schema: { type: sql.NVarChar(128), value: schema },
-      tableName: { type: sql.NVarChar(128), value: tableName },
-    };
+    const driver = getSessionDriver(session.sessionId);
 
     const [rows, sizeRows] = await Promise.all([
-      executeQuery<{
+      runIntrospection<{
         indexName: string | null;
         indexId: number;
         type: string;
@@ -37,39 +32,43 @@ export async function GET(req: NextRequest) {
         columnName: string | null;
         isIncluded: boolean;
         keyOrdinal: number;
-      }>(session.sessionId, SQL_INDEX_INFO, params),
-      executeQuery<{ indexId: number; sizeGB: number }>(
+      }>(session.sessionId, driver.introspection.indexInfo(schema, tableName)),
+      runIntrospection<{ indexId: number; sizeGB: number | null }>(
         session.sessionId,
-        SQL_INDEX_SIZES,
-        params
+        driver.introspection.indexSizes(schema, tableName)
       ),
     ]);
 
+    // Engines without per-index storage figures (MySQL) report null here.
     const sizeMap = new Map<number, number>(
-      sizeRows.map((r) => [r.indexId, Number(r.sizeGB)])
+      sizeRows
+        .filter((r) => r.sizeGB != null)
+        .map((r) => [Number(r.indexId), Number(r.sizeGB)])
     );
 
     // Group columns by index
     const indexMap = new Map<number, IndexInfo>();
     for (const row of rows) {
-      if (!indexMap.has(row.indexId)) {
-        indexMap.set(row.indexId, {
+      // Postgres returns OIDs as strings; coerce so the key type is consistent.
+      const indexId = Number(row.indexId);
+      if (!indexMap.has(indexId)) {
+        indexMap.set(indexId, {
           indexName: row.indexName ?? `(Heap)`,
-          indexId: row.indexId,
+          indexId,
           type: row.type,
           isUnique: Boolean(row.isUnique),
           isPrimaryKey: Boolean(row.isPrimaryKey),
           isDisabled: Boolean(row.isDisabled),
           filterDefinition: row.filterDefinition,
           columns: [],
-          sizeGB: sizeMap.get(row.indexId),
+          sizeGB: sizeMap.get(indexId),
         });
       }
       if (row.columnName) {
-        indexMap.get(row.indexId)!.columns.push({
+        indexMap.get(indexId)!.columns.push({
           name: row.columnName,
           isIncluded: Boolean(row.isIncluded),
-          keyOrdinal: row.keyOrdinal,
+          keyOrdinal: Number(row.keyOrdinal),
         });
       }
     }

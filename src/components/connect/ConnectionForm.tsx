@@ -10,7 +10,8 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Loader2, Database, ChevronRight, ChevronDown, ChevronUp, ArrowLeft, Check, Server, KeyRound, Monitor } from "lucide-react";
 import { cn } from "@/lib/utils";
-import type { AuthMode, DbEngine } from "@/lib/mssql-config";
+import type { AuthMode, DbEngine } from "@/lib/db/types";
+import { ENGINE_OPTIONS, engineDefaults } from "@/lib/engine-options";
 import { SaveConnectionPromptModal } from "./SaveConnectionPromptModal";
 import { SavedConnectionsList } from "./SavedConnectionsList";
 
@@ -26,10 +27,6 @@ interface Credentials {
   encrypt: boolean;
   trustServerCertificate: boolean;
 }
-
-const ENGINE_OPTIONS: { value: DbEngine; label: string; description: string }[] = [
-  { value: "sqlserver", label: "SQL Server / Azure SQL", description: "Microsoft SQL Server, Azure SQL Database, Azure SQL Managed Instance" },
-];
 
 export default function ConnectionForm() {
   const router = useRouter();
@@ -58,6 +55,18 @@ export default function ConnectionForm() {
 
   function setField<K extends keyof Credentials>(field: K, value: Credentials[K]) {
     setCreds((prev) => ({ ...prev, [field]: value }));
+  }
+
+  /**
+   * Switching engines has to clear an auth mode the new engine cannot perform —
+   * only SQL Server supports Windows authentication.
+   */
+  function selectEngine(engine: DbEngine) {
+    setCreds((prev) => ({
+      ...prev,
+      engine,
+      authMode: engineDefaults(engine).supportsWindowsAuth ? prev.authMode : "sql",
+    }));
   }
 
   function handleInputChange(field: keyof Credentials) {
@@ -95,7 +104,7 @@ export default function ConnectionForm() {
       } else {
         const dbs: string[] = data.databases ?? [];
         setDatabases(dbs);
-        const SYSTEM = new Set(["master", "model", "msdb", "tempdb"]);
+        const SYSTEM = new Set(engineDefaults(creds.engine).systemDatabases);
         setSelectedDb(dbs.find((d) => !SYSTEM.has(d)) ?? dbs[0] ?? "");
         setFilter("");
         setStep("database");
@@ -204,7 +213,8 @@ export default function ConnectionForm() {
     }
   }
 
-  const SYSTEM_DBS = new Set(["master", "model", "msdb", "tempdb"]);
+  const engineInfo = engineDefaults(creds.engine);
+  const SYSTEM_DBS = new Set(engineInfo.systemDatabases);
   const filteredDbs = databases.filter((db) =>
     db.toLowerCase().includes(filter.toLowerCase())
   );
@@ -288,7 +298,7 @@ export default function ConnectionForm() {
                   <button
                     key={opt.value}
                     type="button"
-                    onClick={() => setField("engine", opt.value)}
+                    onClick={() => selectEngine(opt.value)}
                     className={cn(
                       "flex items-start gap-3 rounded-md border p-3 text-left transition-colors",
                       creds.engine === opt.value
@@ -306,43 +316,45 @@ export default function ConnectionForm() {
               </div>
             </div>
 
-            {/* Auth mode */}
-            <div className="space-y-1.5">
-              <Label>Authentication</Label>
-              <div className="flex rounded-md border overflow-hidden">
-                <button
-                  type="button"
-                  onClick={() => setField("authMode", "sql")}
-                  className={cn(
-                    "flex-1 flex items-center justify-center gap-1.5 py-2 text-sm transition-colors",
-                    isSqlAuth
-                      ? "bg-primary text-primary-foreground font-medium"
-                      : "bg-background hover:bg-muted/50 text-muted-foreground"
-                  )}
-                >
-                  <KeyRound className="h-3.5 w-3.5" />
-                  SQL Server Auth
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setField("authMode", "windows")}
-                  className={cn(
-                    "flex-1 flex items-center justify-center gap-1.5 py-2 text-sm transition-colors border-l",
-                    !isSqlAuth
-                      ? "bg-primary text-primary-foreground font-medium"
-                      : "bg-background hover:bg-muted/50 text-muted-foreground"
-                  )}
-                >
-                  <Monitor className="h-3.5 w-3.5" />
-                  Windows Auth
-                </button>
+            {/* Auth mode — only SQL Server offers Windows authentication */}
+            {engineInfo.supportsWindowsAuth && (
+              <div className="space-y-1.5">
+                <Label>Authentication</Label>
+                <div className="flex rounded-md border overflow-hidden">
+                  <button
+                    type="button"
+                    onClick={() => setField("authMode", "sql")}
+                    className={cn(
+                      "flex-1 flex items-center justify-center gap-1.5 py-2 text-sm transition-colors",
+                      isSqlAuth
+                        ? "bg-primary text-primary-foreground font-medium"
+                        : "bg-background hover:bg-muted/50 text-muted-foreground"
+                    )}
+                  >
+                    <KeyRound className="h-3.5 w-3.5" />
+                    SQL Server Auth
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setField("authMode", "windows")}
+                    className={cn(
+                      "flex-1 flex items-center justify-center gap-1.5 py-2 text-sm transition-colors border-l",
+                      !isSqlAuth
+                        ? "bg-primary text-primary-foreground font-medium"
+                        : "bg-background hover:bg-muted/50 text-muted-foreground"
+                    )}
+                  >
+                    <Monitor className="h-3.5 w-3.5" />
+                    Windows Auth
+                  </button>
+                </div>
+                {!isSqlAuth && (
+                  <p className="text-xs text-muted-foreground">
+                    Uses the Windows/domain credentials of the process running this app.
+                  </p>
+                )}
               </div>
-              {!isSqlAuth && (
-                <p className="text-xs text-muted-foreground">
-                  Uses the Windows/domain credentials of the process running this app.
-                </p>
-              )}
-            </div>
+            )}
 
             {/* Server + Port */}
             <div className="grid grid-cols-3 gap-3">
@@ -366,7 +378,7 @@ export default function ConnectionForm() {
                 <Input
                   id="port"
                   type="number"
-                  placeholder="1433"
+                  placeholder={String(engineInfo.defaultPort)}
                   value={creds.port}
                   onChange={handleInputChange("port")}
                 />

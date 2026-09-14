@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { loadEditorState, saveEditorState, EditorState } from "@/lib/editor-db";
 import { getSession } from "@/lib/session";
+import { scopeKey } from "@/lib/scope-key";
 
 export async function GET() {
   try {
     const session = await getSession();
-    const serverName = session.serverName ?? "";
+    const serverName = scopeKey(session.engine, session.serverName ?? "");
     const databaseName = session.databaseName ?? "";
     const state = loadEditorState(serverName, databaseName);
     return NextResponse.json(state);
@@ -18,7 +19,7 @@ export async function GET() {
 export async function PUT(req: NextRequest) {
   try {
     const session = await getSession();
-    const serverName = session.serverName ?? "";
+    const serverName = scopeKey(session.engine, session.serverName ?? "");
     const databaseName = session.databaseName ?? "";
     const body = (await req.json()) as EditorState;
     if (!Array.isArray(body.tabs)) {

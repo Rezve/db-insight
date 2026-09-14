@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Play, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import ResultsTable from "@/components/editor/ResultsTable";
-import { quoteId } from "@/lib/sql-queries";
+import { useEngine } from "@/contexts/engine-context";
 
 interface TableDataTabProps {
   tableName: string;
@@ -58,11 +58,15 @@ function highlightSQL(sql: string): string {
   return html;
 }
 
-function buildDefaultQuery(tableName: string): string {
-  const parts = tableName.includes(".")
-    ? tableName.split(".", 2)
-    : ["dbo", tableName];
-  return `SELECT TOP 100 * FROM ${quoteId(parts[0])}.${quoteId(parts[1])}`;
+function buildDefaultQuery(
+  tableName: string,
+  previewQuery: (schema: string, table: string, limit: number) => string,
+  defaultSchema: string
+): string {
+  const [schema, table] = tableName.includes(".")
+    ? (tableName.split(".", 2) as [string, string])
+    : [defaultSchema, tableName];
+  return previewQuery(schema, table, 100);
 }
 
 const SHARED_STYLE: React.CSSProperties = {
@@ -77,7 +81,8 @@ const SHARED_STYLE: React.CSSProperties = {
 };
 
 export default function TableDataTab({ tableName }: TableDataTabProps) {
-  const defaultSql = buildDefaultQuery(tableName);
+  const { previewQuery, defaultSchema } = useEngine();
+  const defaultSql = buildDefaultQuery(tableName, previewQuery, defaultSchema);
 
   // Uncontrolled textarea — sqlRef always holds current value without triggering re-renders
   const sqlRef = useRef(defaultSql);

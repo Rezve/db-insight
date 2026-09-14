@@ -2,8 +2,8 @@ import { Suspense } from "react";
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/session";
 import { isSetupComplete } from "@/lib/config";
-import { executeQuery } from "@/lib/db";
-import { SQL_LIST_TABLES, SQL_LIST_STORED_PROCEDURES } from "@/lib/sql-queries";
+import { getSessionDriver, runIntrospection } from "@/lib/db";
+import { getDriver } from "@/lib/db/registry";
 import Header from "@/components/dashboard/Header";
 import Sidebar from "@/components/dashboard/Sidebar";
 import SidebarSkeleton from "@/components/dashboard/SidebarSkeleton";
@@ -11,6 +11,7 @@ import { SessionCacheProvider } from "@/contexts/session-cache-context";
 import { SchemaProvider } from "@/contexts/schema-context";
 import { UpdateProvider } from "@/contexts/update-context";
 import { EditorThemeProvider } from "@/contexts/editor-theme-context";
+import { EngineProvider, type EngineInfo } from "@/contexts/engine-context";
 import type { TableInfo, StoredProcedureInfo } from "@/types/db";
 
 export const dynamic = "force-dynamic";
@@ -20,9 +21,16 @@ async function SidebarLoader({ sessionId }: { sessionId: string }) {
   let storedProcedures: StoredProcedureInfo[] = [];
 
   try {
+    const { introspection } = getSessionDriver(sessionId);
     const [tableRows, spRows] = await Promise.all([
-      executeQuery<{ schema: string; name: string; type: string }>(sessionId, SQL_LIST_TABLES),
-      executeQuery<{ schema: string; name: string }>(sessionId, SQL_LIST_STORED_PROCEDURES),
+      runIntrospection<{ schema: string; name: string; type: string }>(
+        sessionId,
+        introspection.listTables()
+      ),
+      runIntrospection<{ schema: string; name: string }>(
+        sessionId,
+        introspection.listStoredProcedures()
+      ),
     ]);
 
     tables = tableRows.map((row) => ({
@@ -58,9 +66,21 @@ export default async function DashboardLayout({
     redirect("/connect");
   }
 
+  // Resolved on the server so the UI can gate features from the first render,
+  // without the browser ever importing a database driver.
+  const driver = getDriver(session.engine ?? "sqlserver");
+  const engineInfo: EngineInfo = {
+    engine: driver.engine,
+    engineLabel: driver.label,
+    defaultSchema: driver.defaultSchema,
+    formatterDialect: driver.formatterDialect,
+    capabilities: driver.capabilities,
+  };
+
   return (
     <UpdateProvider>
     <SessionCacheProvider>
+      <EngineProvider info={engineInfo}>
       <SchemaProvider>
         <EditorThemeProvider>
           <div className="flex h-screen flex-col overflow-hidden">
@@ -77,6 +97,7 @@ export default async function DashboardLayout({
           </div>
         </EditorThemeProvider>
       </SchemaProvider>
+      </EngineProvider>
     </SessionCacheProvider>
     </UpdateProvider>
   );

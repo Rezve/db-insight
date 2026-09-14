@@ -26,19 +26,39 @@ export interface SqlToken {
   end: number;   // absolute offset, exclusive
 }
 
-const KEYWORDS = new Set(
-  [
-    "SELECT", "FROM", "WHERE", "JOIN", "INNER", "LEFT", "RIGHT", "FULL",
-    "OUTER", "CROSS", "ON", "AS", "AND", "OR", "NOT", "IN", "LIKE",
-    "BETWEEN", "IS", "NULL", "GROUP", "ORDER", "BY", "HAVING", "TOP",
-    "DISTINCT", "UNION", "ALL", "EXCEPT", "INTERSECT", "WITH", "INTO",
-    "VALUES", "INSERT", "UPDATE", "DELETE", "SET", "EXEC", "EXECUTE",
-    "DECLARE", "IF", "ELSE", "BEGIN", "END", "WHILE", "CASE", "WHEN",
-    "THEN", "RETURN", "CREATE", "ALTER", "DROP", "TABLE", "VIEW",
-    "INDEX", "PROCEDURE", "FUNCTION", "USE", "NOLOCK", "OFFSET", "FETCH",
-    "NEXT", "ROWS", "ONLY", "OVER", "PARTITION", "DESC", "ASC", "OUTPUT",
-  ]
-);
+/** Recognised across every engine. */
+const COMMON_KEYWORDS = [
+  "SELECT", "FROM", "WHERE", "JOIN", "INNER", "LEFT", "RIGHT", "FULL",
+  "OUTER", "CROSS", "ON", "AS", "AND", "OR", "NOT", "IN", "LIKE",
+  "BETWEEN", "IS", "NULL", "GROUP", "ORDER", "BY", "HAVING",
+  "DISTINCT", "UNION", "ALL", "EXCEPT", "INTERSECT", "WITH", "INTO",
+  "VALUES", "INSERT", "UPDATE", "DELETE", "SET",
+  "IF", "ELSE", "BEGIN", "END", "WHILE", "CASE", "WHEN",
+  "THEN", "RETURN", "CREATE", "ALTER", "DROP", "TABLE", "VIEW",
+  "INDEX", "PROCEDURE", "FUNCTION", "OFFSET",
+  "ROWS", "OVER", "PARTITION", "DESC", "ASC",
+];
+
+const DIALECT_KEYWORDS: Record<string, string[]> = {
+  tsql: ["TOP", "NOLOCK", "EXEC", "EXECUTE", "DECLARE", "USE", "OUTPUT", "FETCH", "NEXT", "ONLY"],
+  postgresql: ["LIMIT", "RETURNING", "ILIKE", "CONFLICT", "DO", "NOTHING", "USING", "LATERAL", "UNNEST", "CALL"],
+  mysql: ["LIMIT", "DUPLICATE", "KEY", "IGNORE", "STRAIGHT_JOIN", "CALL", "DELIMITER", "ENGINE"],
+};
+
+/** Defaults to T-SQL so callers that predate multi-engine support behave as before. */
+let KEYWORDS = new Set([...COMMON_KEYWORDS, ...DIALECT_KEYWORDS.tsql]);
+
+/**
+ * Swaps the keyword set for the connected engine. Called once when the editor
+ * learns which engine the session is using.
+ */
+export function setKeywordDialect(dialect: "tsql" | "postgresql" | "mysql"): void {
+  KEYWORDS = new Set([...COMMON_KEYWORDS, ...(DIALECT_KEYWORDS[dialect] ?? [])]);
+}
+
+export function getKeywords(): string[] {
+  return Array.from(KEYWORDS);
+}
 
 function isIdentStart(ch: string): boolean {
   return /[A-Za-z_@#]/.test(ch);

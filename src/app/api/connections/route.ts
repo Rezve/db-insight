@@ -2,15 +2,16 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { randomUUID } from "crypto";
 import { listConnections, saveConnection, deleteConnection, SavedConnection, encryptPassword } from "@/lib/editor-db";
+import { engineSchema, authModeSchema } from "@/lib/connection-schema";
 
 const saveConnectionSchema = z.object({
   name: z.string().min(1, "Connection name is required"),
   tag: z.string().optional(),
   color: z.string().optional(),
-  engine: z.enum(["sqlserver"]),
+  engine: engineSchema,
   server: z.string().min(1, "Server is required"),
   port: z.coerce.number().int().min(1).max(65535).optional(),
-  auth_mode: z.enum(["sql", "windows"]),
+  auth_mode: authModeSchema,
   username: z.string().optional(),
   password: z.string().optional(),
   database_name: z.string().optional(),

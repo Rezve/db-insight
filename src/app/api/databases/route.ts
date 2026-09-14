@@ -1,21 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
-import { z } from "zod";
-import { ConnectionPool } from "mssql";
-import { buildMssqlConfig } from "@/lib/mssql-config";
+import { getDriver } from "@/lib/db/registry";
+import {
+  connectionFieldsSchema,
+  hasRequiredCredentials,
+  isAuthModeSupported,
+  toConnectInput,
+} from "@/lib/connection-schema";
 
-const schema = z.object({
-  engine: z.enum(["sqlserver"]),
-  authMode: z.enum(["sql", "windows"]),
-  server: z.string().min(1, "Server is required"),
-  port: z.coerce.number().int().min(1).max(65535).optional(),
-  username: z.string().optional(),
-  password: z.string().optional(),
-  encrypt: z.boolean().default(false),
-  trustServerCertificate: z.boolean().default(true),
-}).refine(
-  (d) => d.authMode !== "sql" || (!!d.username && !!d.password),
-  { message: "Username and password are required for SQL Server authentication" }
-);
+const schema = connectionFieldsSchema.refine(hasRequiredCredentials, {
+  message: "Username and password are required for SQL authentication",
+});
 
 export async function POST(req: NextRequest) {
   try {
@@ -28,23 +22,26 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const config = buildMssqlConfig(parsed.data, "master");
-    const pool = new ConnectionPool(config);
+    const input = toConnectInput(parsed.data);
+    const driver = getDriver(input.engine);
+
+    if (!isAuthModeSupported(input.engine, input.authMode)) {
+      return NextResponse.json(
+        { error: `${driver.label} does not support Windows authentication` },
+        { status: 400 }
+      );
+    }
+
+    // Enumerating databases needs a connection, so use the engine's bootstrap
+    // database. MySQL can connect without selecting one at all.
+    const config = driver.buildConfig(input, driver.bootstrapDatabase ?? "");
+    const pool = await driver.createPool(config);
 
     try {
-      await pool.connect();
-      const result = await pool.request().query(`
-        SELECT name
-        FROM sys.databases
-        WHERE state_desc = 'ONLINE'
-        ORDER BY
-          CASE WHEN name IN ('master','model','msdb','tempdb') THEN 1 ELSE 0 END,
-          name
-      `);
-      const databases: string[] = result.recordset.map((r: { name: string }) => r.name);
+      const databases = await driver.listDatabases(pool);
       return NextResponse.json({ databases });
     } finally {
-      await pool.close().catch(() => {});
+      await driver.closePool(pool).catch(() => {});
     }
   } catch (err) {
     const message = err instanceof Error ? err.message : "Connection failed";

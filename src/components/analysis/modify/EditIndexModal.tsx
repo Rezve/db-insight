@@ -10,10 +10,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import type { IndexInfo } from "@/types/analysis";
-import {
-  buildDropIndexDDL,
-  buildAlterIndexDDL,
-} from "@/lib/sql-queries";
+import { useEngine } from "@/contexts/engine-context";
 import SqlPreviewDialog from "./SqlPreviewDialog";
 
 interface EditIndexModalProps {
@@ -33,6 +30,7 @@ export default function EditIndexModal({
   index,
   onSuccess,
 }: EditIndexModalProps) {
+  const { ddl } = useEngine();
   const [previewSql, setPreviewSql] = useState("");
   const [previewSqlOnline, setPreviewSqlOnline] = useState<string | undefined>(undefined);
   const [previewOpen, setPreviewOpen] = useState(false);
@@ -112,7 +110,7 @@ export default function EditIndexModal({
                   className="text-xs"
                   disabled={index.isDisabled}
                   onClick={() =>
-                    openPreview(buildAlterIndexDDL(schema, tableName, index.indexName, "DISABLE"))
+                    openPreview(ddl.alterIndex(schema, tableName, index.indexName, "DISABLE"))
                   }
                 >
                   Disable
@@ -124,7 +122,7 @@ export default function EditIndexModal({
                   disabled={index.isDisabled}
                   title="Lightweight defrag — always online, less resource-intensive than a full rebuild"
                   onClick={() =>
-                    openPreview(buildAlterIndexDDL(schema, tableName, index.indexName, "REORGANIZE"))
+                    openPreview(ddl.alterIndex(schema, tableName, index.indexName, "REORGANIZE"))
                   }
                 >
                   Reorganize
@@ -135,8 +133,8 @@ export default function EditIndexModal({
                   className="text-xs"
                   onClick={() =>
                     openPreview(
-                      buildAlterIndexDDL(schema, tableName, index.indexName, "REBUILD"),
-                      buildAlterIndexDDL(schema, tableName, index.indexName, "REBUILD", true)
+                      ddl.alterIndex(schema, tableName, index.indexName, "REBUILD"),
+                      ddl.alterIndex(schema, tableName, index.indexName, "REBUILD", true)
                     )
                   }
                 >
@@ -148,7 +146,7 @@ export default function EditIndexModal({
                   className="text-xs"
                   disabled={index.isPrimaryKey}
                   onClick={() =>
-                    openPreview(buildDropIndexDDL(schema, tableName, index.indexName))
+                    openPreview(ddl.dropIndex(schema, tableName, index.indexName))
                   }
                 >
                   Drop Index

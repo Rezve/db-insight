@@ -1,9 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/session";
-import { executeQuery } from "@/lib/db";
-import { SQL_EXTENDED_COLUMN_DETAILS } from "@/lib/sql-queries";
+import { getSessionDriver, runIntrospection } from "@/lib/db";
 import type { ExtendedColumnDetail } from "@/types/analysis";
-import sql from "mssql";
 
 export async function GET(req: NextRequest) {
   try {
@@ -23,7 +21,9 @@ export async function GET(req: NextRequest) {
 
     const [schema, tableName] = table.split(".", 2);
 
-    const rows = await executeQuery<{
+    const driver = getSessionDriver(session.sessionId);
+
+    const rows = await runIntrospection<{
       columnName: string;
       isComputed: boolean;
       computedDefinition: string | null;
@@ -35,10 +35,7 @@ export async function GET(req: NextRequest) {
       columnComment: string | null;
       defaultConstraintName: string | null;
       defaultDefinition: string | null;
-    }>(session.sessionId, SQL_EXTENDED_COLUMN_DETAILS, {
-      schema: { type: sql.NVarChar(128), value: schema },
-      tableName: { type: sql.NVarChar(128), value: tableName },
-    });
+    }>(session.sessionId, driver.introspection.extendedColumnDetails(schema, tableName));
 
     const columnDetails: ExtendedColumnDetail[] = rows.map((r) => ({
       columnName: r.columnName,

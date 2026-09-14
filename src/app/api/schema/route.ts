@@ -1,12 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/session";
-import { executeQuery } from "@/lib/db";
-import {
-  SQL_SCHEMA_COLUMNS,
-  SQL_SCHEMA_ROUTINES,
-  SQL_SCHEMA_FOREIGN_KEYS,
-  SQL_SCHEMA_PARAMETERS,
-} from "@/lib/sql-queries";
+import { getSessionDriver, runIntrospection } from "@/lib/db";
 import type {
   SchemaData,
   SchemaTable,
@@ -21,28 +15,31 @@ export async function GET() {
       return NextResponse.json({ error: "Not connected" }, { status: 401 });
     }
 
+    const driver = getSessionDriver(session.sessionId);
+    const { introspection } = driver;
+
     const [colRows, routineRows, fkRows, paramRows] = await Promise.all([
-      executeQuery<{
+      runIntrospection<{
         tableSchema: string;
         tableName: string;
         columnName: string;
         dataType: string;
         isNullable: string;
         maxLength: number | null;
-      }>(session.sessionId, SQL_SCHEMA_COLUMNS),
-      executeQuery<{ schema: string; name: string; type: string }>(
+      }>(session.sessionId, introspection.schemaColumns()),
+      runIntrospection<{ schema: string; name: string; type: string }>(
         session.sessionId,
-        SQL_SCHEMA_ROUTINES
+        introspection.schemaRoutines()
       ),
-      executeQuery<{
+      runIntrospection<{
         sourceSchema: string;
         sourceTable: string;
         sourceColumn: string;
         targetSchema: string;
         targetTable: string;
         targetColumn: string;
-      }>(session.sessionId, SQL_SCHEMA_FOREIGN_KEYS),
-      executeQuery<{
+      }>(session.sessionId, introspection.schemaForeignKeys()),
+      runIntrospection<{
         schema: string;
         routineName: string;
         paramName: string;
@@ -51,7 +48,7 @@ export async function GET() {
         isOutput: boolean;
         hasDefault: boolean;
         parameterId: number;
-      }>(session.sessionId, SQL_SCHEMA_PARAMETERS),
+      }>(session.sessionId, introspection.schemaParameters()),
     ]);
 
     // Group columns by table

@@ -3,13 +3,24 @@ import { z } from "zod";
 import { randomUUID } from "crypto";
 import { getSession } from "@/lib/session";
 import { setCredentials, getOrCreatePool, clearSession } from "@/lib/session-store";
-import { buildMssqlConfig } from "@/lib/mssql-config";
-import { getConnection, decryptPassword, updateConnectionAskToSave, findConnectionByCredentials } from "@/lib/editor-db";
+import { getDriver } from "@/lib/db/registry";
+import { isDbEngine, type DbEngine } from "@/lib/db/types";
+import {
+  engineSchema,
+  authModeSchema,
+  isAuthModeSupported,
+  toConnectInput,
+} from "@/lib/connection-schema";
+import {
+  getConnection,
+  decryptPassword,
+  findConnectionByCredentials,
+} from "@/lib/editor-db";
 
 const connectSchema = z.object({
   connectionId: z.string().uuid().optional(),
-  engine: z.enum(["sqlserver"]).optional(),
-  authMode: z.enum(["sql", "windows"]).optional(),
+  engine: engineSchema.optional(),
+  authMode: authModeSchema.optional(),
   server: z.string().min(1, "Server is required").optional(),
   port: z.coerce.number().int().min(1).max(65535).optional(),
   database: z.string().min(1, "Database name is required").optional(),
@@ -50,10 +61,17 @@ export async function POST(req: NextRequest) {
         );
       }
 
+      if (!isDbEngine(saved.engine)) {
+        return NextResponse.json(
+          { success: false, error: `Saved connection uses an unknown engine: ${saved.engine}` },
+          { status: 400 }
+        );
+      }
+
       const decryptedPassword = saved.password_enc ? decryptPassword(saved.password_enc) : undefined;
       connectData = {
         connectionId: parsed.data.connectionId,
-        engine: saved.engine as "sqlserver",
+        engine: saved.engine,
         authMode: saved.auth_mode as "sql" | "windows",
         server: saved.server,
         port: saved.port,
@@ -72,21 +90,34 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    const engine: DbEngine = connectData.engine;
+    const driver = getDriver(engine);
+
+    if (!isAuthModeSupported(engine, connectData.authMode)) {
+      return NextResponse.json(
+        { success: false, error: `${driver.label} does not support Windows authentication` },
+        { status: 400 }
+      );
+    }
+
     const database = connectData.database || "";
     const server = connectData.server;
-    const config = buildMssqlConfig({
-      engine: connectData.engine,
-      authMode: connectData.authMode,
-      server: connectData.server,
-      port: connectData.port,
-      username: connectData.username,
-      password: connectData.password,
-      encrypt: connectData.encrypt ?? false,
-      trustServerCertificate: connectData.trustServerCertificate ?? true,
-    }, database);
+    const config = driver.buildConfig(
+      toConnectInput({
+        engine,
+        authMode: connectData.authMode,
+        server: connectData.server,
+        port: connectData.port,
+        username: connectData.username,
+        password: connectData.password,
+        encrypt: connectData.encrypt,
+        trustServerCertificate: connectData.trustServerCertificate,
+      }),
+      database
+    );
     const sessionId = randomUUID();
 
-    setCredentials(sessionId, config);
+    setCredentials(sessionId, { engine, config });
 
     try {
       await getOrCreatePool(sessionId);
@@ -100,6 +131,7 @@ export async function POST(req: NextRequest) {
     session.sessionId = sessionId;
     session.connectionId = parsed.data.connectionId;
     session.connected = true;
+    session.engine = engine;
     session.databaseName = database;
     session.serverName = server;
     await session.save();
@@ -107,6 +139,7 @@ export async function POST(req: NextRequest) {
     // Check if we should prompt to save this connection
     // Don't prompt if using a saved connection OR if this exact connection already exists in the DB
     const existingConnection = findConnectionByCredentials(
+      engine,
       connectData.server,
       connectData.port,
       connectData.username,
@@ -118,6 +151,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({
       success: true,
+      engine,
       databaseName: database,
       serverName: server,
       shouldPromptSave,

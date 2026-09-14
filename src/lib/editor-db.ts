@@ -77,6 +77,15 @@ function getDb(): Database.Database {
       // Column might already exist, ignore
     }
   }
+  // Installs that predate multi-engine support have no `engine` column, so
+  // inserts would fail against their existing table.
+  if (!connCols.includes("engine")) {
+    try {
+      db.exec("ALTER TABLE connections ADD COLUMN engine TEXT NOT NULL DEFAULT 'sqlserver'");
+    } catch (err) {
+      // Column might already exist, ignore
+    }
+  }
 
   global.__editorDb = db;
   return db;
@@ -166,11 +175,18 @@ export interface SavedConnection {
   created_at: string;
 }
 
-export function listConnections(): SavedConnection[] {
+/** Listing is for the browser, so the encrypted password is deliberately omitted. */
+export type SavedConnectionSummary = Omit<SavedConnection, "password_enc">;
+
+export function listConnections(): SavedConnectionSummary[] {
   const db = getDb();
   return db
-    .prepare("SELECT * FROM connections ORDER BY created_at DESC")
-    .all() as SavedConnection[];
+    .prepare(
+      `SELECT id, name, tag, color, engine, server, port, auth_mode, username,
+              database_name, encrypt, trust_cert, ask_to_save, created_at
+       FROM connections ORDER BY created_at DESC`
+    )
+    .all() as SavedConnectionSummary[];
 }
 
 export function getConnection(id: string): SavedConnection | undefined {
@@ -214,11 +230,15 @@ export function updateConnectionAskToSave(id: string, askToSave: boolean): void 
   db.prepare("UPDATE connections SET ask_to_save = ? WHERE id = ?").run(askToSave ? 1 : 0, id);
 }
 
-export function findConnectionByCredentials(server: string, port: number | undefined, username: string | undefined, database_name: string | undefined): SavedConnection | undefined {
+/**
+ * Engine is part of the key: a Postgres and a MySQL server can share a host,
+ * port and database name without being the same connection.
+ */
+export function findConnectionByCredentials(engine: string, server: string, port: number | undefined, username: string | undefined, database_name: string | undefined): SavedConnection | undefined {
   const db = getDb();
   return db
-    .prepare("SELECT * FROM connections WHERE server = ? AND port IS ? AND username IS ? AND database_name IS ? LIMIT 1")
-    .get(server, port ?? null, username ?? null, database_name ?? null) as SavedConnection | undefined;
+    .prepare("SELECT * FROM connections WHERE engine = ? AND server = ? AND port IS ? AND username IS ? AND database_name IS ? LIMIT 1")
+    .get(engine, server, port ?? null, username ?? null, database_name ?? null) as SavedConnection | undefined;
 }
 
 export function encryptPassword(password: string): string {

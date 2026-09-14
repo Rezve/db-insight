@@ -25,6 +25,7 @@ import TableSchema from "@/components/analysis/TableSchema";
 import TableDataTab from "@/components/analysis/TableDataTab";
 import TableModifier from "@/components/analysis/TableModifier";
 import type { SampleSize } from "@/types/analysis";
+import { useEngine } from "@/contexts/engine-context";
 
 const FULL_SCAN_WARN_THRESHOLD = 500_000;
 
@@ -33,6 +34,7 @@ interface PageProps {
 }
 
 export default function TableAnalysisPage({ params }: PageProps) {
+  const { capabilities, defaultSchema, engineLabel } = useEngine();
   const { tableName: encodedTableName } = use(params);
   const tableName = decodeURIComponent(encodedTableName);
   const searchParams = useSearchParams();
@@ -65,7 +67,7 @@ export default function TableAnalysisPage({ params }: PageProps) {
 
   const [schema, name] = tableName.includes(".")
     ? tableName.split(".", 2)
-    : ["dbo", tableName];
+    : [defaultSchema, tableName];
 
   return (
     <div className="p-6 space-y-4">
@@ -93,7 +95,9 @@ export default function TableAnalysisPage({ params }: PageProps) {
             <TabsTrigger value="data">Data</TabsTrigger>
             <TabsTrigger value="distribution">Distribution</TabsTrigger>
             <TabsTrigger value="indexes">Indexes</TabsTrigger>
-            <TabsTrigger value="missing">Missing Indexes</TabsTrigger>
+            {capabilities.missingIndexAdvisor && (
+              <TabsTrigger value="missing">Missing Indexes</TabsTrigger>
+            )}
             <TabsTrigger value="modify">Alter Table</TabsTrigger>
           </TabsList>
           {activeTab === "distribution" && (
@@ -108,9 +112,18 @@ export default function TableAnalysisPage({ params }: PageProps) {
           </div>
           <div className="text-sm text-muted-foreground max-w-prose space-y-2">
             <p>
-              Select <strong>Distribution</strong> to see column data distribution charts,{" "}
-              <strong>Indexes</strong> to view current indexes and their usage, or{" "}
-              <strong>Missing Indexes</strong> to see SQL Server&apos;s suggestions for new indexes.
+              Select <strong>Distribution</strong> to see column data distribution charts
+              {capabilities.missingIndexAdvisor ? (
+                <>
+                  , <strong>Indexes</strong> to view current indexes and their usage, or{" "}
+                  <strong>Missing Indexes</strong> to see {engineLabel}&apos;s suggestions for new
+                  indexes.
+                </>
+              ) : (
+                <>
+                  {" "}or <strong>Indexes</strong> to view current indexes and their usage.
+                </>
+              )}
             </p>
             <p>
               Use the sample size selector to control how much data is scanned. Small (1,000 rows)
@@ -133,12 +146,14 @@ export default function TableAnalysisPage({ params }: PageProps) {
 
         <TabsContent value="indexes" className="space-y-4">
           <IndexList tableName={tableName} />
-          <IndexUsageStats tableName={tableName} />
+          {capabilities.indexUsageStats && <IndexUsageStats tableName={tableName} />}
         </TabsContent>
 
-        <TabsContent value="missing">
-          <MissingIndexes tableName={tableName} />
-        </TabsContent>
+        {capabilities.missingIndexAdvisor && (
+          <TabsContent value="missing">
+            <MissingIndexes tableName={tableName} />
+          </TabsContent>
+        )}
 
         <TabsContent value="modify">
           <TableModifier tableName={tableName} />

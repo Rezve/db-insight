@@ -16,7 +16,7 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: "DB Analysis Tool",
-  description: "Database analysis and optimization tool for Azure SQL / SQL Server",
+  description: "Database analysis and optimization tool for SQL Server, PostgreSQL and MySQL",
 };
 
 export default function RootLayout({

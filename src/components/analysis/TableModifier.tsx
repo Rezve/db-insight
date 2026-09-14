@@ -22,7 +22,7 @@ import type {
   ForeignKeyDetail,
   PrimaryKeyDetail,
 } from "@/types/analysis";
-import { formatDataType } from "@/lib/format-data-type";
+import { useEngine } from "@/contexts/engine-context";
 import EditColumnModal from "./modify/EditColumnModal";
 import EditIndexModal from "./modify/EditIndexModal";
 import EditKeyModal from "./modify/EditKeyModal";
@@ -35,11 +35,12 @@ interface TableModifierProps {
 }
 
 export default function TableModifier({ tableName }: TableModifierProps) {
+  const { ddl, defaultSchema } = useEngine();
   const { enabled, refreshCount, invalidate } = useSessionCacheContext();
 
   const [schema, tableOnly] = tableName.includes(".")
     ? tableName.split(".", 2)
-    : ["dbo", tableName];
+    : [defaultSchema, tableName];
 
   const [columns, setColumns] = useState<TableColumnDetail[]>([]);
   const [indexes, setIndexes] = useState<IndexInfo[]>([]);
@@ -189,7 +190,7 @@ export default function TableModifier({ tableName }: TableModifierProps) {
                         {col.columnName}
                       </TableCell>
                       <TableCell className="font-mono text-xs text-muted-foreground">
-                        {formatDataType(col)}
+                        {ddl.formatDataType(col)}
                       </TableCell>
                       <TableCell className="text-xs">
                         {col.isNullable ? (

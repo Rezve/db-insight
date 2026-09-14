@@ -13,16 +13,8 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
 import type { TableColumnDetail, ExtendedColumnDetail } from "@/types/analysis";
-import { formatDataType } from "@/lib/format-data-type";
-import {
-  buildAlterColumnDDL,
-  buildDropAddDefaultDDL,
-  buildColumnCommentDDL,
-  buildRenameColumnDDL,
-} from "@/lib/sql-queries";
+import { useEngine } from "@/contexts/engine-context";
 import SqlPreviewDialog from "./SqlPreviewDialog";
-
-const CHAR_TYPES = ["char", "nchar", "varchar", "nvarchar", "text", "ntext"];
 
 interface EditColumnModalProps {
   open: boolean;
@@ -43,10 +35,11 @@ export default function EditColumnModal({
   extended,
   onSuccess,
 }: EditColumnModalProps) {
+  const { ddl } = useEngine();
   const [newName, setNewName] = useState(column.columnName);
   const [comment, setComment] = useState(extended.columnComment ?? "");
   const [isNullable, setIsNullable] = useState(column.isNullable);
-  const [dataTypeFull, setDataTypeFull] = useState(formatDataType(column));
+  const [dataTypeFull, setDataTypeFull] = useState(ddl.formatDataType(column));
   const [collation, setCollation] = useState(extended.collationName ?? "");
   const [defaultExpr, setDefaultExpr] = useState(extended.defaultDefinition ?? "");
 
@@ -57,7 +50,7 @@ export default function EditColumnModal({
     setNewName(column.columnName);
     setComment(extended.columnComment ?? "");
     setIsNullable(column.isNullable);
-    setDataTypeFull(formatDataType(column));
+    setDataTypeFull(ddl.formatDataType(column));
     setCollation(extended.collationName ?? "");
     setDefaultExpr(extended.defaultDefinition ?? "");
   }, [column, extended]);
@@ -65,12 +58,12 @@ export default function EditColumnModal({
   const isComputed = extended.isComputed;
   const isIdentity = column.isIdentity;
   const baseType = dataTypeFull.split("(")[0].toLowerCase();
-  const collationEditable = CHAR_TYPES.includes(column.dataType.toLowerCase());
+  const collationEditable = ddl.isCollatableType(column.dataType);
 
   function buildPreviewSql(): string {
     const stmts: string[] = [];
 
-    const origDataType = formatDataType(column);
+    const origDataType = ddl.formatDataType(column);
     const origNullable = column.isNullable;
     const origCollation = extended.collationName ?? "";
 
@@ -81,7 +74,7 @@ export default function EditColumnModal({
         (collationEditable && collation !== origCollation)
       ) {
         stmts.push(
-          buildAlterColumnDDL(
+          ddl.alterColumn(
             schema,
             tableName,
             column.columnName,
@@ -94,19 +87,19 @@ export default function EditColumnModal({
     }
 
     if (defaultExpr !== (extended.defaultDefinition ?? "")) {
-      const ddl = buildDropAddDefaultDDL(
+      const stmt = ddl.setDefault(
         schema,
         tableName,
         column.columnName,
         extended.defaultConstraintName,
         defaultExpr
       );
-      if (ddl) stmts.push(ddl);
+      if (stmt) stmts.push(stmt);
     }
 
     if (comment !== (extended.columnComment ?? "")) {
       stmts.push(
-        buildColumnCommentDDL(
+        ddl.columnComment(
           schema,
           tableName,
           column.columnName,
@@ -117,7 +110,7 @@ export default function EditColumnModal({
     }
 
     if (newName.trim() && newName.trim() !== column.columnName) {
-      stmts.push(buildRenameColumnDDL(schema, tableName, column.columnName, newName.trim()));
+      stmts.push(ddl.renameColumn(schema, tableName, column.columnName, newName.trim()));
     }
 
     return stmts.join("\n\n");

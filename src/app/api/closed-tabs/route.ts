@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getClosedTabs, addClosedTab, deleteClosedTab } from "@/lib/editor-db";
 import { getSession } from "@/lib/session";
+import { scopeKey } from "@/lib/scope-key";
 
 export async function GET() {
   try {
     const session = await getSession();
-    const serverName = session.serverName ?? "";
+    const serverName = scopeKey(session.engine, session.serverName ?? "");
     const databaseName = session.databaseName ?? "";
     const closedTabs = getClosedTabs(serverName, databaseName);
     return NextResponse.json({ closedTabs });
@@ -18,7 +19,7 @@ export async function GET() {
 export async function POST(req: NextRequest) {
   try {
     const session = await getSession();
-    const serverName = session.serverName ?? "";
+    const serverName = scopeKey(session.engine, session.serverName ?? "");
     const databaseName = session.databaseName ?? "";
     const body = (await req.json()) as { id: string; name: string; sql: string };
     addClosedTab(body, serverName, databaseName);
@@ -32,7 +33,7 @@ export async function POST(req: NextRequest) {
 export async function DELETE(req: NextRequest) {
   try {
     const session = await getSession();
-    const serverName = session.serverName ?? "";
+    const serverName = scopeKey(session.engine, session.serverName ?? "");
     const databaseName = session.databaseName ?? "";
     const body = (await req.json()) as { id: string; closedAt: string };
     deleteClosedTab(body.id, body.closedAt, serverName, databaseName);

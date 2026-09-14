@@ -1,9 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/session";
-import { executeQuery } from "@/lib/db";
-import { SQL_MISSING_INDEXES, synthesizeMissingIndexDDL } from "@/lib/sql-queries";
+import { getSessionDriver, runIntrospection } from "@/lib/db";
 import type { MissingIndex } from "@/types/analysis";
-import sql from "mssql";
 
 export async function GET(req: NextRequest) {
   try {
@@ -20,7 +18,14 @@ export async function GET(req: NextRequest) {
 
     const [schema, tableName] = table.split(".", 2);
 
-    const rows = await executeQuery<{
+    const driver = getSessionDriver(session.sessionId);
+
+    // Only SQL Server has an engine-side missing-index advisor.
+    if (!driver.capabilities.missingIndexAdvisor) {
+      return NextResponse.json({ tableName: table, suggestions: [], unsupported: true });
+    }
+
+    const rows = await runIntrospection<{
       equalityColumns: string | null;
       inequalityColumns: string | null;
       includedColumns: string | null;
@@ -29,10 +34,7 @@ export async function GET(req: NextRequest) {
       userSeeks: number;
       userScans: number;
       improvementMeasure: number;
-    }>(session.sessionId, SQL_MISSING_INDEXES, {
-      schema: { type: sql.NVarChar(128), value: schema },
-      tableName: { type: sql.NVarChar(128), value: tableName },
-    });
+    }>(session.sessionId, driver.introspection.missingIndexes(schema, tableName));
 
     const suggestions: MissingIndex[] = rows.map((row, idx) => ({
       improvementMeasure: Number(row.improvementMeasure),
@@ -43,7 +45,7 @@ export async function GET(req: NextRequest) {
       equalityColumns: row.equalityColumns,
       inequalityColumns: row.inequalityColumns,
       includedColumns: row.includedColumns,
-      suggestedDDL: synthesizeMissingIndexDDL(
+      suggestedDDL: driver.ddl.missingIndex(
         row.equalityColumns,
         row.inequalityColumns,
         row.includedColumns,

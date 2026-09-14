@@ -1,0 +1,54 @@
+# Local PostgreSQL and MySQL instances for developing and testing multi-engine
+# support. Not part of the shipped stack — run it alongside `npm run dev`:
+#
+#   docker compose -f docker-compose.dev-databases.yml up -d
+#
+# Then connect from the app at:
+#   PostgreSQL  localhost:55432  user "dbinsight"  password "dbinsight"  database "demo"
+#   MySQL       localhost:33306  user "dbinsight"  password "dbinsight"  database "demo"
+#
+# Host ports are shifted (55432 / 33306) so they do not collide with a
+# PostgreSQL or MySQL already installed on the machine.
+#
+# Both are seeded with the same small schema (tables, a view, FKs, indexes and a
+# stored routine) so every panel in the app has something to show.
+
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: dbinsight
+      POSTGRES_PASSWORD: dbinsight
+      POSTGRES_DB: demo
+    ports:
+      - "55432:5432"
+    volumes:
+      - ./seed/postgres:/docker-entrypoint-initdb.d:ro
+      - db-insight-pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dbinsight -d demo"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  mysql:
+    image: mysql:8
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpw
+      MYSQL_USER: dbinsight
+      MYSQL_PASSWORD: dbinsight
+      MYSQL_DATABASE: demo
+    ports:
+      - "33306:3306"
+    volumes:
+      - ./seed/mysql:/docker-entrypoint-initdb.d:ro
+      - db-insight-mysql:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-prootpw"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  db-insight-pg:
+  db-insight-mysql:

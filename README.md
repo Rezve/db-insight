@@ -1,10 +1,15 @@
 # DB Insight
 
-A self-hosted SQL Server analysis tool built with Next.js. Connect to any SQL Server or Azure SQL database and explore its schema, run queries, analyze table distributions, inspect indexes, and visualize execution plans — all from a browser UI with credentials that never leave your machine.
+A self-hosted database analysis tool built with Next.js. Connect to a SQL Server, PostgreSQL or MySQL database and explore its schema, run queries, analyze table distributions, inspect indexes, and visualize execution plans — all from a browser UI with credentials that never leave your machine.
 
-> Built for developers and DBAs who want a lightweight, local-first alternative to heavyweight SQL Server Management Studio or Azure Data Studio features. No telemetry, no cloud dependency — your credentials stay on your machine.
+> Built for developers and DBAs who want a lightweight, local-first alternative to heavyweight SQL Server Management Studio, pgAdmin or MySQL Workbench features. No telemetry, no cloud dependency — your credentials stay on your machine.
 
-**Supports:** SQL Server 2016+ and Azure SQL Database.
+**Supports:** SQL Server 2016+ / Azure SQL, PostgreSQL 12+, and MySQL 8+.
+
+Not every feature exists on every engine. Each driver declares what it supports and
+the UI hides the rest — for example the missing-index advisor and the graphical
+execution plan are SQL Server only, and PostgreSQL/MySQL show their `EXPLAIN` output
+as text instead.
 
 <!-- Add a screenshot here: docs/screenshot.png -->
 
@@ -30,7 +35,7 @@ A self-hosted SQL Server analysis tool built with Next.js. Connect to any SQL Se
 - **SQL Editor** — Monaco-based editor with SQL autocomplete, run selected text, execution plan visualization, and STATISTICS IO/TIME capture
 - **Table Analysis** — per-table tabs for overview, data distribution charts, index details, and missing index recommendations
   - Three sample sizes available: Small (TOP 1000), Medium (TOP 10000), Full (warns if >500k rows)
-- **Index Insights** — current index structure, seek/scan/lookup usage metrics from DMVs, and SQL Server's missing index suggestions
+- **Index Insights** — current index structure and usage metrics (SQL Server DMVs, `pg_stat_user_indexes`, MySQL `performance_schema`), plus SQL Server's missing index suggestions
 - **Column Distribution** — selectivity analysis and data distribution histograms using column statistics
 - **First-run setup wizard** — guides you through configuration on first launch; no manual config files required
 - **Dark mode** support
@@ -98,7 +103,7 @@ image: yourdockerhubuser/db-insight:0.1.0
 ### Prerequisites
 
 - Node.js 20+
-- Access to a SQL Server or Azure SQL instance
+- Access to a SQL Server, PostgreSQL or MySQL instance
 
 ### Setup
 
@@ -123,6 +128,27 @@ npm run start
 ```
 
 This also uses `./data/` for storage — the same folder as `npm run dev`, so your saved connections carry over.
+
+### Test databases for development
+
+To work on multi-engine support without pointing at a real server, start seeded
+PostgreSQL and MySQL instances:
+
+```bash
+docker compose -f docker-compose.dev-databases.yml up -d
+```
+
+Both are seeded with the same small schema (tables, a view, foreign keys, indexes,
+a generated column and a stored routine), so every panel has something to show:
+
+| Engine | Host | Port | User | Password | Database |
+|---|---|---|---|---|---|
+| PostgreSQL | localhost | 55432 | dbinsight | dbinsight | demo |
+| MySQL | localhost | 33306 | dbinsight | dbinsight | demo |
+
+The ports are deliberately non-standard so they do not collide with a PostgreSQL
+or MySQL already installed on the machine. Stop them with
+`docker compose -f docker-compose.dev-databases.yml down` (add `-v` to discard the data).
 
 ---
 
@@ -209,7 +235,7 @@ Use the Small sample size for initial exploration on large tables. Full scans on
 | Styling | Tailwind CSS v4 + shadcn/ui |
 | Editor | Monaco Editor with SQL autocomplete |
 | Charts | Recharts |
-| Database | mssql v11 (SQL Server / Azure SQL) |
+| Database | mssql v11 (SQL Server / Azure SQL), pg (PostgreSQL), mysql2 (MySQL) |
 | Local storage | better-sqlite3 (saved connections, editor tabs, query history) |
 | Session | iron-session (encrypted cookie, server-side pool store) |
 | Encryption | AES-256-GCM (saved connection passwords) |

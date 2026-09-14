@@ -1,19 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/session";
-import { executeQuery } from "@/lib/db";
-import sql from "mssql";
-
-const SQL_TABLE_SIZE = `
-SELECT
-    CAST(
-        ROUND(SUM(ps.reserved_page_count) * 8192.0 / (1024.0 * 1024.0 * 1024.0), 4)
-    AS DECIMAL(18, 4)) AS [sizeGB]
-FROM sys.tables t
-INNER JOIN sys.schemas s ON t.schema_id = s.schema_id
-INNER JOIN sys.dm_db_partition_stats ps ON t.object_id = ps.object_id
-WHERE s.name = @schema
-  AND t.name = @tableName
-`;
+import { getSessionDriver, runIntrospection } from "@/lib/db";
 
 export async function GET(req: NextRequest) {
   try {
@@ -30,13 +17,10 @@ export async function GET(req: NextRequest) {
 
     const [schema, tableName] = table.split(".", 2);
 
-    const rows = await executeQuery<{ sizeGB: number }>(
+    const driver = getSessionDriver(session.sessionId);
+    const rows = await runIntrospection<{ sizeGB: number | null }>(
       session.sessionId,
-      SQL_TABLE_SIZE,
-      {
-        schema: { type: sql.NVarChar(128), value: schema },
-        tableName: { type: sql.NVarChar(128), value: tableName },
-      }
+      driver.introspection.tableSize(schema, tableName)
     );
 
     const sizeGB = rows[0]?.sizeGB != null ? Number(rows[0].sizeGB) : null;

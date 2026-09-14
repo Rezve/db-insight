@@ -1,16 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/session";
-import { executeQuery } from "@/lib/db";
-import { buildSampleClause, quoteId, SQL_SCHEMA_COLUMNS } from "@/lib/sql-queries";
+import { executeQuery, getSessionDriver, runIntrospection } from "@/lib/db";
 import type { SampleSize, ColumnStat, TopValue } from "@/types/analysis";
 
-const NUMERIC_TYPES = new Set([
-  "int", "bigint", "smallint", "tinyint", "bit",
-  "decimal", "numeric", "money", "smallmoney",
-  "float", "real",
-]);
-
-const DATE_TYPES = new Set(["date", "datetime", "datetime2", "datetimeoffset", "smalldatetime", "time"]);
+const TOP_VALUE_LIMIT = 20;
 
 export async function GET(req: NextRequest) {
   // Pre-flight validation — these return normal JSON error responses before any stream is created
@@ -40,15 +33,17 @@ export async function GET(req: NextRequest) {
     maxLength: number | null;
   }>;
 
+  const driver = getSessionDriver(sessionId);
+
   try {
-    const colRows = await executeQuery<{
+    const colRows = await runIntrospection<{
       tableSchema: string;
       tableName: string;
       columnName: string;
       dataType: string;
       isNullable: string;
       maxLength: number | null;
-    }>(sessionId, SQL_SCHEMA_COLUMNS);
+    }>(sessionId, driver.introspection.schemaColumns());
 
     tableColumns = colRows.filter(
       (r) => r.tableSchema === schema && r.tableName === tableName
@@ -78,11 +73,12 @@ export async function GET(req: NextRequest) {
           message: "Fetching row count...",
         });
 
-        const sampleClause = buildSampleClause(schema, tableName, sampleSize);
+        const dist = driver.introspection.distribution;
+        const sampleClause = dist.sampleClause(schema, tableName, sampleSize);
 
         const countRows = await executeQuery<{ cnt: number }>(
           sessionId,
-          `SELECT COUNT(*) AS [cnt] FROM ${sampleClause}`
+          dist.rowCount(sampleClause)
         );
         const actualRowsScanned = Number(countRows[0]?.cnt ?? 0);
 
@@ -101,24 +97,11 @@ export async function GET(req: NextRequest) {
             message: `Analyzing column '${col.columnName}' (${current} of ${total})...`,
           });
 
-          const colQ = quoteId(col.columnName);
-          const dataType = col.dataType.toLowerCase();
-          const isNumeric = NUMERIC_TYPES.has(dataType);
+          const colQ = driver.quoteId(col.columnName);
+          const isNumeric = dist.isNumericType(col.dataType);
 
           // Base stats: null count, distinct count
-          const baseQuery = `
-            SELECT
-              COUNT(*)          AS [totalRows],
-              COUNT(${colQ})    AS [nonNullCount],
-              COUNT(*) - COUNT(${colQ}) AS [nullCount],
-              COUNT(DISTINCT ${colQ}) AS [distinctCount]
-              ${isNumeric ? `,
-              MIN(CAST(${colQ} AS FLOAT)) AS [minValue],
-              MAX(CAST(${colQ} AS FLOAT)) AS [maxValue],
-              AVG(CAST(${colQ} AS FLOAT)) AS [avgValue],
-              STDEV(CAST(${colQ} AS FLOAT)) AS [stddev]` : ""}
-            FROM ${sampleClause}
-          `;
+          const baseQuery = dist.baseStats(colQ, sampleClause, isNumeric);
 
           const baseRows = await executeQuery<{
             totalRows: number;
@@ -138,16 +121,12 @@ export async function GET(req: NextRequest) {
           const shouldFetchTopValues = !isNumeric || Number(base?.distinctCount ?? 0) <= 50;
 
           if (shouldFetchTopValues && actualRowsScanned > 0) {
-            const topQuery = `
-              SELECT TOP 20
-                CAST(${colQ} AS NVARCHAR(500)) AS [value],
-                COUNT(*)                        AS [count],
-                CAST(COUNT(*) * 100.0 / ${actualRowsScanned} AS DECIMAL(6,2)) AS [percentage]
-              FROM ${sampleClause}
-              WHERE ${colQ} IS NOT NULL
-              GROUP BY ${colQ}
-              ORDER BY COUNT(*) DESC
-            `;
+            const topQuery = dist.topValues(
+              colQ,
+              sampleClause,
+              actualRowsScanned,
+              TOP_VALUE_LIMIT
+            );
             try {
               const topRows = await executeQuery<{ value: string; count: number; percentage: number }>(
                 sessionId,
@@ -170,12 +149,14 @@ export async function GET(req: NextRequest) {
             nonNullCount: Number(base?.nonNullCount ?? 0),
             nullCount: Number(base?.nullCount ?? 0),
             distinctCount: Number(base?.distinctCount ?? 0),
-            ...(isNumeric && base?.minValue !== undefined
+            // Exact numeric types can come back as strings to preserve
+            // precision, so coerce before the charts consume them.
+            ...(isNumeric && base?.minValue != null
               ? {
-                  minValue: base.minValue,
-                  maxValue: base.maxValue,
-                  avgValue: base.avgValue,
-                  stddev: base.stddev,
+                  minValue: Number(base.minValue),
+                  maxValue: Number(base.maxValue),
+                  avgValue: Number(base.avgValue),
+                  stddev: base.stddev == null ? undefined : Number(base.stddev),
                 }
               : {}),
             topValues,

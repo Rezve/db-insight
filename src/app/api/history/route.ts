@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/session";
 import { getSnapshots, getLatestSnapshot } from "@/lib/stats-db";
-import { executeQuery } from "@/lib/db";
-import { SQL_SUMMARY_SERVER_INFO } from "@/lib/sql-queries";
+import { getSessionDriver, runIntrospection } from "@/lib/db";
+import { scopeKey } from "@/lib/scope-key";
 
 export async function GET() {
   try {
@@ -18,11 +18,15 @@ export async function GET() {
 
     const sid = session.sessionId;
 
-    // Get the canonical server name from SQL Server (@@SERVERNAME)
-    // This ensures we match the server name used when snapshots were saved
+    // Use the engine's canonical server name so this matches what was stored
+    // when the snapshot was written.
     let serverName = session.serverName ?? "";
     try {
-      const srvRows = await executeQuery<{ serverName: string }>(sid, SQL_SUMMARY_SERVER_INFO);
+      const { introspection } = getSessionDriver(sid);
+      const srvRows = await runIntrospection<{ serverName: string }>(
+        sid,
+        introspection.summaryServerInfo()
+      );
       if (srvRows?.[0]?.serverName) {
         serverName = srvRows[0].serverName;
       }
@@ -30,7 +34,7 @@ export async function GET() {
       // Fall back to session value if query fails
     }
 
-    const snapshots = getSnapshots(databaseName, serverName, 90);
+    const snapshots = getSnapshots(databaseName, scopeKey(session.engine, serverName), 90);
 
     return NextResponse.json({ serverName, databaseName, snapshots });
   } catch (err) {

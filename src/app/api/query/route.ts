@@ -1,6 +1,22 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/session";
 import { getOrCreatePool } from "@/lib/session-store";
+import { getSessionDriver } from "@/lib/db";
+import type { NeutralResult, PlanMode, PlanResult } from "@/lib/db/types";
+
+/** Finds the plan-XML column in any of a result's record sets. */
+function extractPlanXml(result: NeutralResult): string | undefined {
+  const sets = result.recordsets?.length ? result.recordsets : [result.rows];
+  for (const rs of sets) {
+    const row = rs?.[0];
+    if (!row) continue;
+    const key = Object.keys(row).find(
+      (k) => k.toLowerCase().includes("showplan") || k.toLowerCase().includes("xml")
+    );
+    if (key && typeof row[key] === "string") return row[key] as string;
+  }
+  return undefined;
+}
 
 export async function POST(req: NextRequest) {
   try {
@@ -13,120 +29,92 @@ export async function POST(req: NextRequest) {
     const { sql, maxRows = 1000, planMode = "off" } = body as {
       sql: string;
       maxRows?: number;
-      planMode?: "off" | "actual" | "estimated";
+      planMode?: PlanMode;
     };
 
     if (!sql || typeof sql !== "string") {
       return NextResponse.json({ error: "sql is required" }, { status: 400 });
     }
 
+    const driver = getSessionDriver(session.sessionId);
     const pool = await getOrCreatePool(session.sessionId);
     const start = Date.now();
 
-    const statistics: string[] = [];
+    const planCapability = driver.capabilities.queryPlan;
+    const wantsPlan = planMode !== "off" && planCapability !== false;
 
-    function extractPlanXml(row: Record<string, unknown>): string | undefined {
-      const key = Object.keys(row).find(
-        (k) => k.toLowerCase().includes("showplan") || k.toLowerCase().includes("xml")
-      );
-      return key && typeof row[key] === "string" ? (row[key] as string) : undefined;
-    }
-
-    // Estimated plan: SET SHOWPLAN_XML must be the only statement in its batch,
-    // so we make three sequential requests on the same pool connection.
-    if (planMode === "estimated") {
+    // An estimated plan never runs the statement, so it short-circuits here.
+    if (planMode === "estimated" && wantsPlan) {
       try {
-        await pool.request().query("SET SHOWPLAN_XML ON");
-
-        const planRequest = pool.request();
-        planRequest.on("info", (info: { message: string }) => {
-          if (info.message?.trim()) statistics.push(info.message);
-        });
-        const planResult = await planRequest.query(sql);
-        const executionMs = Date.now() - start;
-
-        await pool.request().query("SET SHOWPLAN_XML OFF");
-
-        const allRecordsets = Array.isArray(planResult.recordsets)
-          ? (planResult.recordsets as Record<string, unknown>[][])
-          : [];
-
-        let planXml: string | undefined;
-        for (const rs of allRecordsets) {
-          if (rs?.length >= 1) {
-            planXml = extractPlanXml(rs[0] as Record<string, unknown>);
-            if (planXml) break;
-          }
-        }
-
+        const plan = await driver.explain(pool, sql, "estimated");
         const durationMs = Date.now() - start;
-        const fetchingMs = durationMs - executionMs;
-
         return NextResponse.json({
           columns: [],
           rows: [],
           rowCount: 0,
           durationMs,
-          executionMs,
-          fetchingMs,
+          executionMs: durationMs,
+          fetchingMs: 0,
           truncated: false,
           rowsAffected: [],
-          statistics,
-          planXml,
+          statistics: [],
+          planXml: plan.planXml,
+          planText: plan.planText,
         });
       } catch (queryErr) {
-        // Always turn SHOWPLAN_XML back off so the connection is reusable
-        try { await pool.request().query("SET SHOWPLAN_XML OFF"); } catch {}
         const durationMs = Date.now() - start;
         const err = queryErr as Error & { lineNumber?: number };
         return NextResponse.json(
-          { error: err.message, lineNumber: err.lineNumber, durationMs, executionMs: durationMs, fetchingMs: 0, statistics },
+          {
+            error: err.message,
+            lineNumber: err.lineNumber,
+            durationMs,
+            executionMs: durationMs,
+            fetchingMs: 0,
+            statistics: [],
+          },
           { status: 400 }
         );
       }
     }
 
     try {
-      const request = pool.request();
-      request.on("info", (info: { message: string }) => {
-        if (info.message?.trim()) statistics.push(info.message);
-      });
-      const result = await request.query(sql);
+      const result = await driver.query(pool, sql);
       const executionMs = Date.now() - start;
 
-      // mssql recordsets typed as array — cast for safe indexing
-      const allRecordsets = Array.isArray(result.recordsets)
-        ? (result.recordsets as Record<string, unknown>[][])
-        : [];
-
       const isActualPlan = planMode === "actual";
+      const allRecordsets = result.recordsets ?? [];
 
-      // Actual plan: data in recordsets[0], plan XML in last recordset.
-      const firstRecordset: Record<string, unknown>[] =
-        isActualPlan && allRecordsets.length > 0
-          ? allRecordsets[0]
-          : (result.recordset as Record<string, unknown>[]) ?? [];
+      // SQL Server returns the data in the first record set and appends the
+      // plan as a trailing one; other engines return a single set.
+      const recordset =
+        isActualPlan && allRecordsets.length > 0 ? allRecordsets[0] : result.rows;
 
-      const recordset = firstRecordset || [];
       const truncated = recordset.length > maxRows;
       const rows = truncated ? recordset.slice(0, maxRows) : recordset;
 
-      const columns = result.recordset?.columns
-        ? Object.entries(result.recordset.columns).map(([name, meta]) => ({
-            name,
-            dataType:
-              (meta as { type?: { declaration?: string } }).type
-                ?.declaration ?? "unknown",
-          }))
-        : rows.length > 0
-        ? Object.keys(rows[0]).map((name) => ({ name, dataType: "unknown" }))
-        : [];
+      const columns =
+        result.columns.length > 0
+          ? result.columns
+          : rows.length > 0
+          ? Object.keys(rows[0]).map((name) => ({ name, dataType: "unknown" }))
+          : [];
 
       let planXml: string | undefined;
-      if (isActualPlan && allRecordsets.length > 1) {
-        const lastRecordset = allRecordsets[allRecordsets.length - 1];
-        if (lastRecordset?.length === 1) {
-          planXml = extractPlanXml(lastRecordset[0] as Record<string, unknown>);
+      let planText: string | undefined;
+
+      if (isActualPlan && wantsPlan) {
+        if (planCapability === "showplan-xml") {
+          if (allRecordsets.length > 1) {
+            const last = allRecordsets[allRecordsets.length - 1];
+            if (last?.length === 1) planXml = extractPlanXml({ ...result, rows: last });
+          }
+        } else {
+          // Engines without an inline plan need a second EXPLAIN round trip.
+          const plan = await driver
+            .explain(pool, sql, "actual")
+            .catch((): PlanResult => ({}));
+          planText = plan.planText;
         }
       }
 
@@ -142,8 +130,9 @@ export async function POST(req: NextRequest) {
         fetchingMs,
         truncated,
         rowsAffected: result.rowsAffected,
-        statistics,
+        statistics: result.messages,
         planXml,
+        planText,
       });
     } catch (queryErr) {
       const durationMs = Date.now() - start;
@@ -155,7 +144,7 @@ export async function POST(req: NextRequest) {
           durationMs,
           executionMs: durationMs,
           fetchingMs: 0,
-          statistics,
+          statistics: [],
         },
         { status: 400 }
       );

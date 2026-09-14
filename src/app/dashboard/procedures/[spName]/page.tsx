@@ -1,8 +1,7 @@
 import { getSession } from "@/lib/session";
-import { executeQuery } from "@/lib/db";
-import { SQL_GET_SP_DEFINITION } from "@/lib/sql-queries";
+import { getSessionDriver, runIntrospection } from "@/lib/db";
+import { getDriver } from "@/lib/db/registry";
 import SpCodeViewer from "@/components/procedures/SpCodeViewer";
-import sql from "mssql";
 
 interface Props {
   params: Promise<{ spName: string }>;
@@ -12,21 +11,20 @@ export default async function ProcedurePage({ params }: Props) {
   const { spName } = await params;
   const decoded = decodeURIComponent(spName);
   const dotIndex = decoded.indexOf(".");
-  const schema = dotIndex !== -1 ? decoded.slice(0, dotIndex) : "dbo";
-  const name = dotIndex !== -1 ? decoded.slice(dotIndex + 1) : decoded;
 
   const session = await getSession();
+  const defaultSchema = getDriver(session.engine ?? "sqlserver").defaultSchema;
+  const schema = dotIndex !== -1 ? decoded.slice(0, dotIndex) : defaultSchema;
+  const name = dotIndex !== -1 ? decoded.slice(dotIndex + 1) : decoded;
+
   let definition: string | null = null;
 
   if (session.connected && session.sessionId) {
     try {
-      const rows = await executeQuery<{ definition: string }>(
+      const driver = getSessionDriver(session.sessionId);
+      const rows = await runIntrospection<{ definition: string }>(
         session.sessionId,
-        SQL_GET_SP_DEFINITION,
-        {
-          schema: { type: sql.NVarChar(128), value: schema },
-          name: { type: sql.NVarChar(128), value: name },
-        }
+        driver.introspection.spDefinition(schema, name)
       );
       definition = rows[0]?.definition ?? null;
     } catch {

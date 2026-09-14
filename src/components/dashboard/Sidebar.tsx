@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -20,6 +20,7 @@ import {
   X,
 } from "lucide-react";
 import type { TableInfo, StoredProcedureInfo } from "@/types/db";
+import { useEngine } from "@/contexts/engine-context";
 
 interface SidebarProps {
   tables: TableInfo[];
@@ -27,6 +28,7 @@ interface SidebarProps {
 }
 
 export default function Sidebar({ tables, storedProcedures }: SidebarProps) {
+  const { capabilities } = useEngine();
   const pathname = usePathname();
   const [activeSection, setActiveSection] = useState<"tables" | "procedures" | null>(null);
   const [isCollapsed, setIsCollapsed] = useState(false);
@@ -68,6 +70,20 @@ export default function Sidebar({ tables, storedProcedures }: SidebarProps) {
           t.schema.toLowerCase().includes(tq),
       )
     : tables;
+
+  // Showing only the table name hides real collisions once a database has more
+  // than one schema, which is the norm in Postgres. Group by schema when the
+  // engine has a schema tier and more than one is actually in use.
+  const tablesBySchema = useMemo(() => {
+    const groups = new Map<string, TableInfo[]>();
+    for (const t of filteredTables) {
+      if (!groups.has(t.schema)) groups.set(t.schema, []);
+      groups.get(t.schema)!.push(t);
+    }
+    return Array.from(groups.entries()).sort(([a], [b]) => a.localeCompare(b));
+  }, [filteredTables]);
+
+  const showSchemaGroups = capabilities.schemas && tablesBySchema.length > 1;
 
   const pq = procedureSearch.toLowerCase();
   const filteredProcedures = procedureSearch
@@ -169,7 +185,14 @@ export default function Sidebar({ tables, storedProcedures }: SidebarProps) {
                 </div>
                 <ScrollArea className="flex-1 min-h-0">
                   <nav className="space-y-0.5 pr-2">
-                    {filteredTables.map((table) => {
+                    {tablesBySchema.map(([schemaName, schemaTables]) => (
+                    <div key={schemaName} className="space-y-0.5">
+                    {showSchemaGroups && (
+                      <p className="px-2 pt-2 pb-0.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                        {schemaName}
+                      </p>
+                    )}
+                    {schemaTables.map((table) => {
                       const href = `/dashboard/tables/${encodeURIComponent(table.fullName)}?tab=schema`;
                       const isActive = pathname === href;
                       return (
@@ -195,6 +218,8 @@ export default function Sidebar({ tables, storedProcedures }: SidebarProps) {
                         </Link>
                       );
                     })}
+                    </div>
+                    ))}
                     {filteredTables.length === 0 && (
                       <p className="px-2 py-2 text-xs text-muted-foreground">No tables found.</p>
                     )}

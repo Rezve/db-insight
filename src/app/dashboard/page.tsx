@@ -1,6 +1,5 @@
 import { getSession } from "@/lib/session";
-import { executeQuery } from "@/lib/db";
-import { SQL_LIST_TABLES, SQL_TABLE_SIZES } from "@/lib/sql-queries";
+import { getSessionDriver, runIntrospection } from "@/lib/db";
 import OverviewTabs from "@/components/dashboard/OverviewTabs";
 import type { TableInfo } from "@/types/db";
 
@@ -9,14 +8,15 @@ export default async function DashboardPage() {
   let tables: TableInfo[] = [];
 
   try {
+    const { introspection } = getSessionDriver(session.sessionId!);
     const [rows, sizeRows] = await Promise.all([
-      executeQuery<{ schema: string; name: string; type: string }>(
+      runIntrospection<{ schema: string; name: string; type: string }>(
         session.sessionId!,
-        SQL_LIST_TABLES
+        introspection.listTables()
       ),
-      executeQuery<{ schema: string; name: string; sizeGB: number }>(
+      runIntrospection<{ schema: string; name: string; sizeGB: number }>(
         session.sessionId!,
-        SQL_TABLE_SIZES
+        introspection.tableSizes()
       ).catch(() => [] as { schema: string; name: string; sizeGB: number }[]),
     ]);
 

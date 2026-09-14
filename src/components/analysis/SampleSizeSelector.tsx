@@ -10,8 +10,8 @@ interface SampleSizeSelectorProps {
 }
 
 const options: { value: SampleSize; label: string; description: string }[] = [
-  { value: "small", label: "Small", description: "TOP 1,000 rows" },
-  { value: "medium", label: "Medium", description: "TOP 10,000 rows" },
+  { value: "small", label: "Small", description: "First 1,000 rows" },
+  { value: "medium", label: "Medium", description: "First 10,000 rows" },
   { value: "full", label: "Full scan", description: "All rows (may be slow)" },
 ];
 

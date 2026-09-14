@@ -1,14 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/session";
-import { executeQuery } from "@/lib/db";
-import {
-  SQL_SUMMARY_OBJECT_COUNTS,
-  SQL_SUMMARY_STORAGE,
-  SQL_SUMMARY_ROW_COUNT,
-  SQL_SUMMARY_INDEX_HEALTH,
-  SQL_SUMMARY_INDEX_USAGE,
-  SQL_SUMMARY_SERVER_INFO,
-} from "@/lib/sql-queries";
+import { getSessionDriver, runIntrospection } from "@/lib/db";
 import type { DatabaseSummary } from "@/types/db";
 
 export async function GET() {
@@ -19,30 +11,41 @@ export async function GET() {
     }
 
     const sid = session.sessionId;
+    const { introspection } = getSessionDriver(sid);
+
+    /**
+     * Storage and activity figures come from views the connecting user may not
+     * be allowed to read — SQL Server DMVs need VIEW SERVER STATE, and MySQL's
+     * performance_schema is often off limits. A missing permission should leave
+     * those tiles empty rather than blank the whole dashboard, so each optional
+     * query degrades to no rows.
+     */
+    const optional = <T>(p: Promise<T[]>): Promise<T[]> => p.catch(() => [] as T[]);
+
     const [objRows, storRows, rowRows, idxHealthRows, idxUsageRows, srvRows] =
       await Promise.all([
-        executeQuery<{
+        runIntrospection<{
           tableCount: number; viewCount: number; procedureCount: number;
           functionCount: number; totalColumnCount: number;
           tablesWithPK: number; foreignKeyCount: number;
-        }>(sid, SQL_SUMMARY_OBJECT_COUNTS),
-        executeQuery<{
+        }>(sid, introspection.summaryObjectCounts()),
+        optional(runIntrospection<{
           totalSizeGB: number; dataSizeGB: number; indexSizeGB: number;
           largestTableName: string | null;
-        }>(sid, SQL_SUMMARY_STORAGE),
-        executeQuery<{ totalRows: number }>(sid, SQL_SUMMARY_ROW_COUNT),
-        executeQuery<{
+        }>(sid, introspection.summaryStorage())),
+        optional(runIntrospection<{ totalRows: number }>(sid, introspection.summaryRowCount())),
+        optional(runIntrospection<{
           totalIndexes: number; disabledIndexes: number;
           tablesWithMissingIndexes: number; missingIndexCount: number;
-        }>(sid, SQL_SUMMARY_INDEX_HEALTH),
-        executeQuery<{
+        }>(sid, introspection.summaryIndexHealth())),
+        optional(runIntrospection<{
           totalSeeks: number; totalScans: number; totalLookups: number;
           totalUpdates: number; unusedIndexCount: number;
-        }>(sid, SQL_SUMMARY_INDEX_USAGE),
-        executeQuery<{
+        }>(sid, introspection.summaryIndexUsage())),
+        optional(runIntrospection<{
           serverName: string; databaseName: string; sqlVersion: string;
           edition: string; serverStartTime: string; uptimeMinutes: number;
-        }>(sid, SQL_SUMMARY_SERVER_INFO),
+        }>(sid, introspection.summaryServerInfo())),
       ]);
 
     const obj = objRows[0];
@@ -74,8 +77,10 @@ export async function GET() {
       totalLookups:             Number(idxU?.totalLookups ?? 0),
       totalUpdates:             Number(idxU?.totalUpdates ?? 0),
       unusedIndexCount:         Number(idxU?.unusedIndexCount ?? 0),
-      serverName:               srv?.serverName ?? "",
-      databaseName:             srv?.databaseName ?? "",
+      // Fall back to the session values so history snapshots stay keyed
+      // correctly even when the server-info query is not permitted.
+      serverName:               srv?.serverName ?? session.serverName ?? "",
+      databaseName:             srv?.databaseName ?? session.databaseName ?? "",
       sqlVersion:               String(srv?.sqlVersion ?? ""),
       edition:                  String(srv?.edition ?? ""),
       serverStartTime:          srv?.serverStartTime ?? "",
@@ -85,7 +90,8 @@ export async function GET() {
     // Fire-and-forget snapshot — must not block or break the summary response
     try {
       const { saveSnapshot } = await import("@/lib/stats-db");
-      saveSnapshot(summary.serverName, summary.databaseName, summary);
+      const { scopeKey } = await import("@/lib/scope-key");
+      saveSnapshot(scopeKey(session.engine, summary.serverName), summary.databaseName, summary);
     } catch {
       // intentionally swallowed
     }

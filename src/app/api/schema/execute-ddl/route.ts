@@ -1,21 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/session";
-import { executeRawQuery } from "@/lib/db";
+import { executeRawQuery, getSessionDriver } from "@/lib/db";
 
-const ALLOWED_PREFIXES = [
-  "ALTER TABLE ",
-  "DROP INDEX ",
-  "ALTER INDEX ",
-  "EXEC SYS.SP_ADDEXTENDEDPROPERTY",
-  "EXEC SYS.SP_UPDATEEXTENDEDPROPERTY",
-  "EXEC SP_RENAME ",
-];
-
-function isAllowedDDL(sql: string): boolean {
+/**
+ * Each engine allows a different set of DDL verbs, so the allowlist travels
+ * with the driver rather than being hard-coded here.
+ */
+function isAllowedDDL(sql: string, allowedPrefixes: string[]): boolean {
   const lines = sql.split("\n").filter((l) => l.trim().length > 0);
   return lines.every((line) => {
     const upper = line.trimStart().toUpperCase();
-    return ALLOWED_PREFIXES.some((p) => upper.startsWith(p));
+    return allowedPrefixes.some((p) => upper.startsWith(p));
   });
 }
 
@@ -33,7 +28,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "sql is required" }, { status: 400 });
     }
 
-    if (!isAllowedDDL(sql)) {
+    const driver = getSessionDriver(session.sessionId);
+    if (!isAllowedDDL(sql, driver.ddl.allowedStatementPrefixes)) {
       return NextResponse.json({ error: "Disallowed DDL statement" }, { status: 400 });
     }
 

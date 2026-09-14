@@ -1,9 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/session";
-import { executeQuery } from "@/lib/db";
-import { SQL_FK_DETAILS } from "@/lib/sql-queries";
+import { getSessionDriver, runIntrospection } from "@/lib/db";
 import type { ForeignKeyDetail } from "@/types/analysis";
-import sql from "mssql";
 
 export async function GET(req: NextRequest) {
   try {
@@ -23,13 +21,10 @@ export async function GET(req: NextRequest) {
 
     const [schema, tableName] = table.split(".", 2);
 
-    const rows = await executeQuery<ForeignKeyDetail>(
+    const driver = getSessionDriver(session.sessionId);
+    const rows = await runIntrospection<ForeignKeyDetail>(
       session.sessionId,
-      SQL_FK_DETAILS,
-      {
-        schema: { type: sql.NVarChar(128), value: schema },
-        tableName: { type: sql.NVarChar(128), value: tableName },
-      }
+      driver.introspection.fkDetails(schema, tableName)
     );
 
     return NextResponse.json({ tableName: table, foreignKeys: rows });

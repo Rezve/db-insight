@@ -1,20 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/session";
 import { getOrCreatePool } from "@/lib/session-store";
-import sql from "mssql";
+import { getSessionDriver } from "@/lib/db";
+import type { QueryParams } from "@/lib/db/types";
 
 interface UpdateEntry {
   where: Record<string, unknown>;
   set: Record<string, unknown>;
 }
 
-function quoteId(name: string) {
-  return `[${name.replace(/\]/g, "]]")}]`;
-}
-
-// Accepts "schema.table" or "[schema].[table]" — rejects anything else
+// Accepts "schema.table" or a quoted equivalent — rejects anything else
 function parseTable(raw: string): { schema: string; table: string } | null {
-  const clean = raw.replace(/[\[\]]/g, "");
+  const clean = raw.replace(/[[\]`"]/g, "");
   const parts = clean.split(".");
   if (parts.length !== 2) return null;
   const [schema, table] = parts;
@@ -22,16 +19,20 @@ function parseTable(raw: string): { schema: string; table: string } | null {
   return { schema, table };
 }
 
-function bindValue(
-  request: InstanceType<typeof sql.Request>,
-  paramName: string,
-  value: unknown
-) {
-  if (value === null || value === undefined) {
-    request.input(paramName, sql.NVarChar(sql.MAX), null);
-  } else {
-    request.input(paramName, sql.NVarChar(sql.MAX), String(value));
-  }
+/**
+ * Grid edits arrive as text, so values bind as strings and the engine converts
+ * them to the column's type: SQL Server by implicit conversion, Postgres by
+ * inferring an untyped parameter from its context, MySQL by coercion.
+ *
+ * Booleans are the exception and must stay native — MySQL rejects the string
+ * "true" outright for a TINYINT column, while each driver renders a real
+ * boolean correctly (1/0 for MySQL, true/false for Postgres, BIT for SQL
+ * Server). Null stays null so it does not become the literal string "null".
+ */
+function bindValue(value: unknown): QueryParams[string] {
+  if (value === null || value === undefined) return { value: null };
+  if (typeof value === "boolean") return { value, type: "boolean" };
+  return { value: String(value), type: "string" };
 }
 
 export async function POST(req: NextRequest) {
@@ -53,34 +54,38 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Invalid table name" }, { status: 400 });
     }
 
+    const driver = getSessionDriver(session.sessionId);
     const pool = await getOrCreatePool(session.sessionId);
+    const { quoteId } = driver;
+
+    const target = parsed.schema
+      ? `${quoteId(parsed.schema)}.${quoteId(parsed.table)}`
+      : quoteId(parsed.table);
 
     const results = await Promise.all(
       updates
         .filter((u) => Object.keys(u.set).length > 0 && Object.keys(u.where).length > 0)
         .map((update) => {
-          const setCols = Object.keys(update.set);
-          const whereCols = Object.keys(update.where);
-          const request = pool.request();
+          const params: QueryParams = {};
 
-          const setClause = setCols
+          const setClause = Object.keys(update.set)
             .map((col, i) => {
               const p = `s${i}`;
-              bindValue(request, p, update.set[col]);
+              params[p] = bindValue(update.set[col]);
               return `${quoteId(col)} = @${p}`;
             })
             .join(", ");
 
-          const whereClause = whereCols
+          const whereClause = Object.keys(update.where)
             .map((col, i) => {
               const p = `w${i}`;
-              bindValue(request, p, update.where[col]);
+              params[p] = bindValue(update.where[col]);
               return `${quoteId(col)} = @${p}`;
             })
             .join(" AND ");
 
-          const querySql = `UPDATE ${quoteId(parsed.schema)}.${quoteId(parsed.table)} SET ${setClause} WHERE ${whereClause}`;
-          return request.query(querySql);
+          const querySql = `UPDATE ${target} SET ${setClause} WHERE ${whereClause}`;
+          return driver.query(pool, querySql, params);
         })
     );
     const rowsAffected = results.map((r) => r.rowsAffected[0] ?? 0);

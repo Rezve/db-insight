@@ -6,6 +6,7 @@ import ClosedTabsPanel from "./ClosedTabsPanel";
 import { Button } from "@/components/ui/button";
 import SqlEditor from "./SqlEditor";
 import type { QueryLogEntry } from "@/types/db";
+import { useEngine } from "@/contexts/engine-context";
 
 interface QueryResult {
   columns: { name: string; dataType: string }[];
@@ -19,6 +20,8 @@ interface QueryResult {
   lineNumber?: number;
   statistics?: string[];
   planXml?: string;
+  /** EXPLAIN output for engines without a structured plan model. */
+  planText?: string;
 }
 
 type ResultTabName = "log" | "results" | "statistics" | "visualPlan" | "planText" | "compare";
@@ -56,11 +59,16 @@ function nextQueryNumber(existingTabs: { name: string }[]): number {
   return n;
 }
 
-function createTab(existingTabs: { name: string }[], name?: string, sql?: string): TabState {
+function createTab(
+  existingTabs: { name: string }[],
+  starterSql: string,
+  name?: string,
+  sql?: string
+): TabState {
   return {
     id: crypto.randomUUID(),
     name: name ?? `Query ${nextQueryNumber(existingTabs)}`,
-    sql: sql ?? "SELECT TOP 100 * FROM ",
+    sql: sql ?? starterSql,
     result: null,
     resultSql: null,
     previousResult: null,
@@ -77,7 +85,12 @@ function createTab(existingTabs: { name: string }[], name?: string, sql?: string
 }
 
 export default function EditorTabsManager() {
-  const [tabs, setTabs] = useState<TabState[]>(() => [createTab([])]);
+  const { previewQuery, defaultSchema } = useEngine();
+  // A new tab opens with a row-limited SELECT in the engine's own syntax,
+  // with the table name left for the user to fill in.
+  const starterSql = previewQuery(defaultSchema, "", 100).replace(/""|``|\[\]/, "");
+
+  const [tabs, setTabs] = useState<TabState[]>(() => [createTab([], starterSql)]);
   const [activeTabId, setActiveTabId] = useState<string>(() => tabs[0].id);
   const [loaded, setLoaded] = useState(false);
   const [closedTabNames, setClosedTabNames] = useState<string[]>([]);
@@ -151,7 +164,7 @@ export default function EditorTabsManager() {
 
   function addTab(name?: string, sql?: string) {
     const allNames = [...tabs, ...closedTabNames.map((n) => ({ name: n }))];
-    const newTab = createTab(allNames, name, sql);
+    const newTab = createTab(allNames, starterSql, name, sql);
     setTabs((prev) => [...prev, newTab]);
     setActiveTabId(newTab.id);
   }

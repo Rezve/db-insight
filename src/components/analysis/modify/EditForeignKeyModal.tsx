@@ -9,7 +9,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import type { ForeignKeyDetail } from "@/types/analysis";
-import { buildDropConstraintDDL } from "@/lib/sql-queries";
+import { useEngine } from "@/contexts/engine-context";
 import SqlPreviewDialog from "./SqlPreviewDialog";
 
 interface EditForeignKeyModalProps {
@@ -29,11 +29,12 @@ export default function EditForeignKeyModal({
   fk,
   onSuccess,
 }: EditForeignKeyModalProps) {
+  const { ddl } = useEngine();
   const [previewSql, setPreviewSql] = useState("");
   const [previewOpen, setPreviewOpen] = useState(false);
 
   function handleDropFK() {
-    setPreviewSql(buildDropConstraintDDL(schema, tableName, fk.constraintName));
+    setPreviewSql(ddl.dropConstraint(schema, tableName, fk.constraintName));
     setPreviewOpen(true);
   }
 
