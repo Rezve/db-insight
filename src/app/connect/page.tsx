@@ -3,6 +3,8 @@ import { getSession } from "@/lib/session";
 import { isSetupComplete } from "@/lib/config";
 import ConnectionForm from "@/components/connect/ConnectionForm";
 
+export const dynamic = "force-dynamic";
+
 export default async function ConnectPage() {
   if (!isSetupComplete()) {
     redirect("/setup");

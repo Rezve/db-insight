@@ -3,6 +3,8 @@ import { isSetupComplete, getDataDir, getExistingDataFiles } from "@/lib/config"
 import { randomBytes } from "crypto";
 import SetupForm from "./SetupForm";
 
+export const dynamic = "force-dynamic";
+
 export default function SetupPage() {
   if (isSetupComplete()) {
     redirect("/");

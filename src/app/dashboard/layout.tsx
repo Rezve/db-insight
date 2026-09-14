@@ -13,6 +13,8 @@ import { UpdateProvider } from "@/contexts/update-context";
 import { EditorThemeProvider } from "@/contexts/editor-theme-context";
 import type { TableInfo, StoredProcedureInfo } from "@/types/db";
 
+export const dynamic = "force-dynamic";
+
 async function SidebarLoader({ sessionId }: { sessionId: string }) {
   let tables: TableInfo[] = [];
   let storedProcedures: StoredProcedureInfo[] = [];
