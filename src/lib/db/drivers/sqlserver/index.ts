@@ -173,19 +173,51 @@ export const sqlServerDriver: DbDriver = {
 
   query: runQuery,
 
+  async readOnlyQuery(handle, sql, { timeoutMs }) {
+    // SQL Server has no read-only transaction; the caller's statement guard is
+    // the write protection. The transaction is still always rolled back.
+    const sqlLib = await import("mssql");
+    const tx = new sqlLib.Transaction(pool(handle));
+    await tx.begin();
+    try {
+      const request = tx.request();
+      const messages: string[] = [];
+      request.on("info", (info: { message: string }) => {
+        if (info.message?.trim()) messages.push(info.message);
+      });
+      const timer = setTimeout(() => request.cancel(), timeoutMs);
+      try {
+        return shapeResult(await request.query(sql), messages);
+      } finally {
+        clearTimeout(timer);
+      }
+    } finally {
+      await tx.rollback().catch(() => {});
+    }
+  },
+
   async explain(handle, sql, mode: PlanMode): Promise<PlanResult> {
     if (mode !== "estimated") return {};
 
-    // SET SHOWPLAN_XML must be the only statement in its batch, so this runs as
-    // three sequential requests on the same pool.
-    const p = pool(handle);
-    await p.request().query("SET SHOWPLAN_XML ON");
+    // SET SHOWPLAN_XML is per-session and must be the only statement in its
+    // batch. Separate requests on the pool can land on different connections,
+    // so the ON, the query and the OFF are pinned to one via a transaction
+    // (always rolled back). Nothing is executed while SHOWPLAN is on.
+    const sqlLib = await import("mssql");
+    const tx = new sqlLib.Transaction(pool(handle));
+    await tx.begin();
     try {
-      const result = await runQuery(handle, sql);
+      await tx.request().batch("SET SHOWPLAN_XML ON");
+      let result: NeutralResult;
+      try {
+        result = shapeResult(await tx.request().batch(sql), []);
+      } finally {
+        // Always turn it off so the connection is never returned in showplan mode.
+        await tx.request().batch("SET SHOWPLAN_XML OFF").catch(() => {});
+      }
       return { planXml: extractPlanXml(result) };
     } finally {
-      // Always turn it back off so the connection stays reusable.
-      await p.request().query("SET SHOWPLAN_XML OFF").catch(() => {});
+      await tx.rollback().catch(() => {});
     }
   },
 

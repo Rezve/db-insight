@@ -152,6 +152,30 @@ export const mysqlDriver: DbDriver = {
 
   query: runQuery,
 
+  async readOnlyQuery(handle, sql, { timeoutMs }) {
+    const conn = await state(handle).pool.getConnection();
+    try {
+      await conn.query("START TRANSACTION READ ONLY");
+      const [result, fields] = await conn.query({ sql, timeout: timeoutMs });
+      if (!Array.isArray(result)) {
+        return { columns: [], rows: [], rowsAffected: [0], messages: [] };
+      }
+      const rows = normalizeRows(result as RowDataPacket[] as Record<string, unknown>[]);
+      return {
+        columns: ((fields as FieldPacket[]) ?? []).map((f) => ({
+          name: f.name,
+          dataType: mysqlTypeName(f.type),
+        })),
+        rows,
+        rowsAffected: [rows.length],
+        messages: [],
+      };
+    } finally {
+      await conn.query("ROLLBACK").catch(() => {});
+      conn.release();
+    }
+  },
+
   async explain(handle, sql, mode: PlanMode): Promise<PlanResult> {
     if (mode === "off") return {};
     const result = await runQuery(handle, `EXPLAIN FORMAT=JSON ${sql}`);

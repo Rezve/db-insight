@@ -54,6 +54,26 @@ function getDb(): Database.Database {
       ask_to_save   INTEGER NOT NULL DEFAULT 1,
       created_at    TEXT NOT NULL DEFAULT (datetime('now'))
     );
+    CREATE TABLE IF NOT EXISTS mcp_audit_log (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      ts            TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+      server_name   TEXT NOT NULL DEFAULT '',
+      database_name TEXT NOT NULL DEFAULT '',
+      client        TEXT NOT NULL DEFAULT '',
+      tool          TEXT NOT NULL,
+      input         TEXT NOT NULL DEFAULT '',
+      outcome       TEXT NOT NULL,
+      row_count     INTEGER,
+      duration_ms   INTEGER,
+      detail        TEXT
+    );
+    CREATE TABLE IF NOT EXISTS mcp_tokens (
+      server_name   TEXT NOT NULL,
+      database_name TEXT NOT NULL,
+      token_enc     TEXT NOT NULL,
+      created_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+      PRIMARY KEY (server_name, database_name)
+    );
   `);
 
   // Migration: add connection-scoping columns if the table predates this change
@@ -247,4 +267,89 @@ export function encryptPassword(password: string): string {
 
 export function decryptPassword(encrypted: string): string {
   return decrypt(encrypted);
+}
+
+
+export interface McpAuditEntry {
+  id: number;
+  ts: string;
+  client: string;
+  tool: string;
+  input: string;
+  outcome: string;
+  rowCount: number | null;
+  durationMs: number | null;
+  detail: string | null;
+}
+
+export interface McpAuditInput {
+  serverName: string;
+  databaseName: string;
+  client: string;
+  tool: string;
+  input: string;
+  outcome: string;
+  rowCount?: number | null;
+  durationMs?: number | null;
+  detail?: string | null;
+}
+
+const MCP_AUDIT_RETENTION_DAYS = 30;
+
+export function addMcpAudit(entry: McpAuditInput): void {
+  const db = getDb();
+  db.prepare(
+    `INSERT INTO mcp_audit_log (server_name, database_name, client, tool, input, outcome, row_count, duration_ms, detail)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  ).run(
+    entry.serverName,
+    entry.databaseName,
+    entry.client,
+    entry.tool,
+    entry.input.slice(0, 20000),
+    entry.outcome,
+    entry.rowCount ?? null,
+    entry.durationMs ?? null,
+    entry.detail?.slice(0, 2000) ?? null
+  );
+  db.prepare("DELETE FROM mcp_audit_log WHERE ts < strftime('%Y-%m-%dT%H:%M:%fZ','now', ?)").run(
+    `-${MCP_AUDIT_RETENTION_DAYS} days`
+  );
+}
+
+/** The persistent MCP bearer token for a server/database, if one was generated before. */
+export function getMcpToken(serverName: string, databaseName: string): string | null {
+  const row = getDb()
+    .prepare("SELECT token_enc FROM mcp_tokens WHERE server_name = ? AND database_name = ?")
+    .get(serverName, databaseName) as { token_enc: string } | undefined;
+  if (!row) return null;
+  try {
+    return decrypt(row.token_enc);
+  } catch {
+    return null;
+  }
+}
+
+export function setMcpToken(serverName: string, databaseName: string, token: string): void {
+  getDb()
+    .prepare(
+      `INSERT INTO mcp_tokens (server_name, database_name, token_enc) VALUES (?, ?, ?)
+       ON CONFLICT(server_name, database_name)
+       DO UPDATE SET token_enc = excluded.token_enc, created_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')`
+    )
+    .run(serverName, databaseName, encrypt(token));
+}
+
+export function clearMcpAudit(serverName: string, databaseName: string): void {
+  getDb().prepare("DELETE FROM mcp_audit_log WHERE server_name = ? AND database_name = ?").run(serverName, databaseName);
+}
+
+export function listMcpAudit(serverName: string, databaseName: string, limit = 100): McpAuditEntry[] {
+  return getDb()
+    .prepare(
+      `SELECT id, ts, client, tool, input, outcome, row_count AS rowCount, duration_ms AS durationMs, detail
+       FROM mcp_audit_log WHERE server_name = ? AND database_name = ?
+       ORDER BY id DESC LIMIT ?`
+    )
+    .all(serverName, databaseName, limit) as McpAuditEntry[];
 }

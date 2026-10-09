@@ -257,6 +257,12 @@ export interface DbDriver {
   isConnected(pool: PoolHandle): boolean;
 
   query(pool: PoolHandle, sql: string, params?: QueryParams): Promise<NeutralResult>;
+  /**
+   * Runs `sql` in a transaction that is always rolled back, with a statement
+   * timeout, and read-only at the engine level where the engine supports it
+   * (Postgres, MySQL). Used for untrusted callers such as the MCP server.
+   */
+  readOnlyQuery(pool: PoolHandle, sql: string, options: { timeoutMs: number }): Promise<NeutralResult>;
   explain(pool: PoolHandle, sql: string, mode: PlanMode): Promise<PlanResult>;
 
   listDatabases(pool: PoolHandle): Promise<string[]>;

@@ -154,6 +154,21 @@ export const postgresDriver: DbDriver = {
 
   query: runQuery,
 
+  async readOnlyQuery(handle, sql, { timeoutMs }) {
+    const s = state(handle);
+    const client = await s.pool.connect();
+    try {
+      await client.query("BEGIN READ ONLY");
+      await client.query(`SET LOCAL statement_timeout = ${Math.floor(timeoutMs)}`);
+      const before = s.notices.length;
+      const result = await client.query(sql);
+      return shapeResult(result as QueryResult, s.notices.splice(before));
+    } finally {
+      await client.query("ROLLBACK").catch(() => {});
+      client.release();
+    }
+  },
+
   async explain(handle, sql, mode: PlanMode): Promise<PlanResult> {
     if (mode === "off") return {};
     // ANALYZE actually runs the statement, so it is only used for actual plans.

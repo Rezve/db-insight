@@ -47,6 +47,14 @@ export async function clearSession(sessionId: string): Promise<void> {
   }
   poolStore.delete(sessionId);
   credentialStore.delete(sessionId);
+
+  // MCP access dies with the connection. Imported lazily: mcp/state depends on this module.
+  const [{ disableMcp }, { denyAll }] = await Promise.all([
+    import("@/lib/mcp/state"),
+    import("@/lib/mcp/approvals"),
+  ]);
+  denyAll(sessionId);
+  disableMcp(sessionId);
 }
 
 export async function getOrCreatePool(sessionId: string): Promise<PoolHandle> {

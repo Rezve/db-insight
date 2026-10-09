@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { LogOut, Database, Loader2, RefreshCw } from "lucide-react";
 import { useSessionCacheContext } from "@/contexts/session-cache-context";
 import UpdateChecker from "@/components/dashboard/UpdateChecker";
+import McpStatus from "@/components/dashboard/McpStatus";
 
 interface HeaderProps {
   serverName: string;
@@ -59,6 +60,7 @@ export default function Header({ serverName, databaseName }: HeaderProps) {
           {databaseName}
         </Badge>
       </div>
+      <McpStatus />
       <UpdateChecker />
       {enabled && (
         <Button
