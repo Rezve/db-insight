@@ -86,6 +86,15 @@ WHERE ROUTINE_SCHEMA = ${SCHEMA} AND ROUTINE_NAME = @name
 LIMIT 1
 `;
 
+// information_schema.VIEWS stores only the SELECT body, so prepend the CREATE header.
+const SQL_GET_VIEW_DEFINITION = `
+SELECT
+    CONCAT('CREATE OR REPLACE VIEW \`', REPLACE(TABLE_NAME, '\`', '\`\`'), '\` AS\\n', VIEW_DEFINITION) AS \`definition\`
+FROM information_schema.VIEWS
+WHERE TABLE_SCHEMA = ${SCHEMA} AND TABLE_NAME = @name
+LIMIT 1
+`;
+
 const SQL_SCHEMA_FOREIGN_KEYS = `
 SELECT
     k.TABLE_SCHEMA            AS \`sourceSchema\`,
@@ -354,6 +363,7 @@ export const mysqlIntrospection: IntrospectionQueries = {
   schemaParameters: () => q(SQL_SCHEMA_PARAMETERS),
 
   spDefinition: (schema, name) => q(SQL_GET_SP_DEFINITION, { schema: id(schema), name: id(name) }),
+  viewDefinition: (schema, name) => q(SQL_GET_VIEW_DEFINITION, { schema: id(schema), name: id(name) }),
 
   rowCountFast: (schema, tableName) => q(SQL_ROW_COUNT_FAST, table(schema, tableName)),
   rowCountExact: (schema, tableName) =>

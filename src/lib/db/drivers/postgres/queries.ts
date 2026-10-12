@@ -91,6 +91,15 @@ WHERE n.nspname = @schema AND p.proname = @name
 LIMIT 1
 `;
 
+// pg_views stores only the SELECT body, so prepend the CREATE header.
+const SQL_GET_VIEW_DEFINITION = `
+SELECT
+    'CREATE OR REPLACE VIEW ' || quote_ident(schemaname) || '.' || quote_ident(viewname)
+        || E' AS\\n' || definition AS "definition"
+FROM pg_views
+WHERE schemaname = @schema AND viewname = @name
+`;
+
 const SQL_SCHEMA_FOREIGN_KEYS = `
 SELECT
     src_ns.nspname  AS "sourceSchema",
@@ -421,6 +430,7 @@ export const postgresIntrospection: IntrospectionQueries = {
   schemaParameters: () => q(SQL_SCHEMA_PARAMETERS),
 
   spDefinition: (schema, name) => q(SQL_GET_SP_DEFINITION, { schema: id(schema), name: id(name) }),
+  viewDefinition: (schema, name) => q(SQL_GET_VIEW_DEFINITION, { schema: id(schema), name: id(name) }),
 
   rowCountFast: (schema, tableName) => q(SQL_ROW_COUNT_FAST, table(schema, tableName)),
   rowCountExact: (schema, tableName) =>

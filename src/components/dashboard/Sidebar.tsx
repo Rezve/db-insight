@@ -4,11 +4,11 @@ import { useState, useMemo } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import {
   Braces,
   Code2,
+  Eye,
   Table2,
   LayoutDashboard,
   ChevronDown,
@@ -22,6 +22,8 @@ import {
 import type { TableInfo, StoredProcedureInfo } from "@/types/db";
 import { useEngine } from "@/contexts/engine-context";
 
+type Section = "tables" | "views" | "procedures";
+
 interface SidebarProps {
   tables: TableInfo[];
   storedProcedures: StoredProcedureInfo[];
@@ -30,10 +32,14 @@ interface SidebarProps {
 export default function Sidebar({ tables, storedProcedures }: SidebarProps) {
   const { capabilities } = useEngine();
   const pathname = usePathname();
-  const [activeSection, setActiveSection] = useState<"tables" | "procedures" | null>(null);
+  const [activeSection, setActiveSection] = useState<Section | null>(null);
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [tableSearch, setTableSearch] = useState("");
+  const [viewSearch, setViewSearch] = useState("");
   const [procedureSearch, setProcedureSearch] = useState("");
+
+  const baseTables = useMemo(() => tables.filter((t) => t.type !== "VIEW"), [tables]);
+  const views = useMemo(() => tables.filter((t) => t.type === "VIEW"), [tables]);
 
   const navLinks = [
     { href: "/dashboard", label: "Overview", icon: LayoutDashboard },
@@ -42,48 +48,27 @@ export default function Sidebar({ tables, storedProcedures }: SidebarProps) {
     { href: "/dashboard/settings", label: "Settings", icon: Settings },
   ];
 
-  const toggleTables = () => {
-    if (activeSection === "tables") {
-      setActiveSection(null);
-      setTableSearch("");
-    } else {
-      setActiveSection("tables");
-      setProcedureSearch("");
-    }
+  const toggleSection = (section: Section) => {
+    setActiveSection((current) => (current === section ? null : section));
+    setTableSearch("");
+    setViewSearch("");
+    setProcedureSearch("");
   };
+  const toggleTables = () => toggleSection("tables");
+  const toggleViews = () => toggleSection("views");
+  const toggleProcedures = () => toggleSection("procedures");
 
-  const toggleProcedures = () => {
-    if (activeSection === "procedures") {
-      setActiveSection(null);
-      setProcedureSearch("");
-    } else {
-      setActiveSection("procedures");
-      setTableSearch("");
-    }
-  };
+  const filteredTables = useMemo(() => filterByName(baseTables, tableSearch), [baseTables, tableSearch]);
+  const filteredViews = useMemo(() => filterByName(views, viewSearch), [views, viewSearch]);
 
-  const tq = tableSearch.toLowerCase();
-  const filteredTables = tableSearch
-    ? tables.filter(
-        (t) =>
-          t.name.toLowerCase().includes(tq) ||
-          t.schema.toLowerCase().includes(tq),
-      )
-    : tables;
-
-  // Showing only the table name hides real collisions once a database has more
-  // than one schema, which is the norm in Postgres. Group by schema when the
-  // engine has a schema tier and more than one is actually in use.
-  const tablesBySchema = useMemo(() => {
-    const groups = new Map<string, TableInfo[]>();
-    for (const t of filteredTables) {
-      if (!groups.has(t.schema)) groups.set(t.schema, []);
-      groups.get(t.schema)!.push(t);
-    }
-    return Array.from(groups.entries()).sort(([a], [b]) => a.localeCompare(b));
-  }, [filteredTables]);
+  // Showing only the name hides real collisions once a database has more than
+  // one schema, which is the norm in Postgres. Group by schema when the engine
+  // has a schema tier and more than one is actually in use.
+  const tablesBySchema = useMemo(() => groupBySchema(filteredTables), [filteredTables]);
+  const viewsBySchema = useMemo(() => groupBySchema(filteredViews), [filteredViews]);
 
   const showSchemaGroups = capabilities.schemas && tablesBySchema.length > 1;
+  const showViewSchemaGroups = capabilities.schemas && viewsBySchema.length > 1;
 
   const pq = procedureSearch.toLowerCase();
   const filteredProcedures = procedureSearch
@@ -162,7 +147,7 @@ export default function Sidebar({ tables, storedProcedures }: SidebarProps) {
                   activeSection === "tables" && "rotate-180",
                 )}
               />
-              Tables ({tables.length})
+              Tables ({baseTables.length})
             </button>
             {activeSection === "tables" && (
               <>
@@ -210,11 +195,6 @@ export default function Sidebar({ tables, storedProcedures }: SidebarProps) {
                           <span className="truncate min-w-0 flex-1" title={table.fullName}>
                             {table.name}
                           </span>
-                          {table.type === "VIEW" && (
-                            <Badge variant="outline" className="text-[10px] py-0 px-1 flex-shrink-0">
-                              V
-                            </Badge>
-                          )}
                         </Link>
                       );
                     })}
@@ -229,7 +209,81 @@ export default function Sidebar({ tables, storedProcedures }: SidebarProps) {
             )}
           </div>
 
-          {/* Stored Procedures — always second */}
+          {/* Views */}
+          <div className={cn("flex flex-col px-3", activeSection === "views" && "flex-1 min-h-0")}>
+            <button
+              onClick={toggleViews}
+              className="flex items-center gap-1 text-xs font-semibold text-muted-foreground uppercase tracking-wider px-2 py-1 w-full hover:text-foreground transition-colors"
+            >
+              <ChevronDown
+                className={cn(
+                  "h-3.5 w-3.5 transition-transform",
+                  activeSection === "views" && "rotate-180",
+                )}
+              />
+              Views ({views.length})
+            </button>
+            {activeSection === "views" && (
+              <>
+                <div className="relative mb-1.5 px-2">
+                  <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground pointer-events-none" />
+                  <input
+                    value={viewSearch}
+                    onChange={(e) => setViewSearch(e.target.value)}
+                    placeholder="Filter views…"
+                    className="w-full pl-6 pr-5 py-1 text-xs rounded-md bg-zinc-100 dark:bg-zinc-800 border-0 outline-none focus:ring-1 focus:ring-primary/50 placeholder:text-muted-foreground"
+                  />
+                  {viewSearch && (
+                    <button
+                      onClick={() => setViewSearch("")}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  )}
+                </div>
+                <ScrollArea className="flex-1 min-h-0">
+                  <nav className="space-y-0.5 pr-2">
+                    {viewsBySchema.map(([schemaName, schemaViews]) => (
+                    <div key={schemaName} className="space-y-0.5">
+                    {showViewSchemaGroups && (
+                      <p className="px-2 pt-2 pb-0.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                        {schemaName}
+                      </p>
+                    )}
+                    {schemaViews.map((view) => {
+                      const href = `/dashboard/views/${encodeURIComponent(view.fullName)}`;
+                      const isActive = pathname === href;
+                      return (
+                        <Link
+                          key={view.fullName}
+                          href={href}
+                          className={cn(
+                            "flex items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors min-w-0",
+                            isActive
+                              ? "bg-primary/10 text-primary font-medium"
+                              : "text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800",
+                          )}
+                        >
+                          <Eye className="h-3.5 w-3.5 flex-shrink-0" />
+                          <span className="truncate min-w-0 flex-1" title={view.fullName}>
+                            {view.name}
+                          </span>
+                        </Link>
+                      );
+                    })}
+                    </div>
+                    ))}
+                    {filteredViews.length === 0 && (
+                      <p className="px-2 py-2 text-xs text-muted-foreground">No views found.</p>
+                    )}
+                  </nav>
+                </ScrollArea>
+              </>
+            )}
+          </div>
+
+          {/* Stored Procedures */}
           <div className={cn("flex flex-col px-3", activeSection === "procedures" && "flex-1 min-h-0")}>
             <button
               onClick={toggleProcedures}
@@ -298,4 +352,21 @@ export default function Sidebar({ tables, storedProcedures }: SidebarProps) {
       )}
     </aside>
   );
+}
+
+function filterByName(items: TableInfo[], search: string): TableInfo[] {
+  if (!search) return items;
+  const q = search.toLowerCase();
+  return items.filter(
+    (t) => t.name.toLowerCase().includes(q) || t.schema.toLowerCase().includes(q),
+  );
+}
+
+function groupBySchema(items: TableInfo[]): [string, TableInfo[]][] {
+  const groups = new Map<string, TableInfo[]>();
+  for (const t of items) {
+    if (!groups.has(t.schema)) groups.set(t.schema, []);
+    groups.get(t.schema)!.push(t);
+  }
+  return Array.from(groups.entries()).sort(([a], [b]) => a.localeCompare(b));
 }

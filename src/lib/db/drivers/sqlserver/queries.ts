@@ -22,6 +22,7 @@ SELECT
     TABLE_TYPE   AS [type]
 FROM INFORMATION_SCHEMA.TABLES
 WHERE TABLE_TYPE IN ('BASE TABLE', 'VIEW')
+  AND TABLE_SCHEMA NOT IN ('sys', 'INFORMATION_SCHEMA')
 ORDER BY TABLE_SCHEMA, TABLE_NAME
 `;
 
@@ -65,6 +66,14 @@ FROM sys.sql_modules sm
 INNER JOIN sys.objects o ON sm.object_id = o.object_id
 INNER JOIN sys.schemas s ON o.schema_id = s.schema_id
 WHERE s.name = @schema AND o.name = @name AND o.type = 'P'
+`;
+
+const SQL_GET_VIEW_DEFINITION = `
+SELECT sm.definition AS [definition]
+FROM sys.sql_modules sm
+INNER JOIN sys.objects o ON sm.object_id = o.object_id
+INNER JOIN sys.schemas s ON o.schema_id = s.schema_id
+WHERE s.name = @schema AND o.name = @name AND o.type = 'V'
 `;
 
 const SQL_SCHEMA_FOREIGN_KEYS = `
@@ -459,6 +468,7 @@ export const sqlServerIntrospection: IntrospectionQueries = {
   schemaParameters: () => q(SQL_SCHEMA_PARAMETERS),
 
   spDefinition: (schema, name) => q(SQL_GET_SP_DEFINITION, { schema: id(schema), name: id(name) }),
+  viewDefinition: (schema, name) => q(SQL_GET_VIEW_DEFINITION, { schema: id(schema), name: id(name) }),
 
   rowCountFast: (schema, tableName) => q(SQL_ROW_COUNT_FAST, table(schema, tableName)),
   rowCountExact: (schema, tableName) =>

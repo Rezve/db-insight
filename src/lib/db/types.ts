@@ -130,6 +130,7 @@ export interface IntrospectionQueries {
   schemaForeignKeys(): PreparedQuery;
   schemaParameters(): PreparedQuery;
   spDefinition(schema: string, name: string): PreparedQuery;
+  viewDefinition(schema: string, name: string): PreparedQuery;
 
   rowCountFast(schema: string, table: string): PreparedQuery;
   rowCountExact(schema: string, table: string): PreparedQuery;
