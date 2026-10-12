@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/session";
 import { disableMcp, enableMcp, getMcpState, setAllowedForSession, setRequireApproval } from "@/lib/mcp/state";
 import { approveAll, denyAll, listPending } from "@/lib/mcp/approvals";
+import { getMcpPrefs, setMcpPrefs } from "@/lib/editor-db";
 
 export const dynamic = "force-dynamic";
 
@@ -65,6 +66,17 @@ export async function POST(req: NextRequest) {
   }
 
   const state = getMcpState(sid);
+  // Remember on/off and the approval mode so the next connect to this database restores them.
+  // "Allow for this session" is deliberately not remembered.
+  if (typeof body.enabled === "boolean" || typeof body.requireApproval === "boolean") {
+    const serverName = session.serverName ?? "";
+    const databaseName = session.databaseName ?? "";
+    setMcpPrefs(serverName, databaseName, {
+      enabled: Boolean(state),
+      requireApproval:
+        state?.requireApproval ?? body.requireApproval ?? getMcpPrefs(serverName, databaseName)?.requireApproval ?? true,
+    });
+  }
   return NextResponse.json({
     enabled: Boolean(state),
     requireApproval: state?.requireApproval ?? true,

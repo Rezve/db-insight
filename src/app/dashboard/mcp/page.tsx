@@ -261,7 +261,8 @@ export default function McpPage() {
 
             <p className="text-muted-foreground">
               Only single SELECT queries are accepted; writes and DDL are rejected. SQL Server has no engine-level
-              read-only mode, so also connect with a read-only login. MCP turns off when you disconnect or restart.
+              read-only mode, so also connect with a read-only login. Your on/off and approval
+              choice is remembered for this database and applied again the next time you connect.
             </p>
           </section>
 

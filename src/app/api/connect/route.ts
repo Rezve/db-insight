@@ -15,7 +15,9 @@ import {
   getConnection,
   decryptPassword,
   findConnectionByCredentials,
+  getMcpPrefs,
 } from "@/lib/editor-db";
+import { enableMcp } from "@/lib/mcp/state";
 
 const connectSchema = z.object({
   connectionId: z.string().uuid().optional(),
@@ -135,6 +137,12 @@ export async function POST(req: NextRequest) {
     session.databaseName = database;
     session.serverName = server;
     await session.save();
+
+    // Restore MCP if it was left on the last time this database was used.
+    const mcpPrefs = getMcpPrefs(server, database);
+    if (mcpPrefs?.enabled) {
+      enableMcp(sessionId, { serverName: server, databaseName: database, requireApproval: mcpPrefs.requireApproval });
+    }
 
     // Check if we should prompt to save this connection
     // Don't prompt if using a saved connection OR if this exact connection already exists in the DB

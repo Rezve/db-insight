@@ -3,8 +3,8 @@ import { getCredentials } from "@/lib/session-store";
 import { getMcpToken, setMcpToken } from "@/lib/editor-db";
 
 /**
- * In-memory MCP state, per live database session. Deliberately not persisted:
- * MCP is off after a restart, disconnect or reconnect and must be turned on again.
+ * In-memory MCP state, per live database session. The live state dies with the session;
+ * the user's on/off choice is remembered in `mcp_prefs` and re-applied on the next connect.
  */
 export interface McpSessionState {
   tokenHash: string;

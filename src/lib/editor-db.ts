@@ -74,6 +74,14 @@ function getDb(): Database.Database {
       created_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
       PRIMARY KEY (server_name, database_name)
     );
+    CREATE TABLE IF NOT EXISTS mcp_prefs (
+      server_name      TEXT NOT NULL,
+      database_name    TEXT NOT NULL,
+      enabled          INTEGER NOT NULL DEFAULT 0,
+      require_approval INTEGER NOT NULL DEFAULT 1,
+      updated_at       TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+      PRIMARY KEY (server_name, database_name)
+    );
   `);
 
   // Migration: add connection-scoping columns if the table predates this change
@@ -338,6 +346,30 @@ export function setMcpToken(serverName: string, databaseName: string, token: str
        DO UPDATE SET token_enc = excluded.token_enc, created_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')`
     )
     .run(serverName, databaseName, encrypt(token));
+}
+
+export interface McpPrefs {
+  enabled: boolean;
+  requireApproval: boolean;
+}
+
+/** The user's last MCP choice for a server/database, applied again on the next connect. */
+export function getMcpPrefs(serverName: string, databaseName: string): McpPrefs | null {
+  const row = getDb()
+    .prepare("SELECT enabled, require_approval FROM mcp_prefs WHERE server_name = ? AND database_name = ?")
+    .get(serverName, databaseName) as { enabled: number; require_approval: number } | undefined;
+  return row ? { enabled: row.enabled === 1, requireApproval: row.require_approval === 1 } : null;
+}
+
+export function setMcpPrefs(serverName: string, databaseName: string, prefs: McpPrefs): void {
+  getDb()
+    .prepare(
+      `INSERT INTO mcp_prefs (server_name, database_name, enabled, require_approval) VALUES (?, ?, ?, ?)
+       ON CONFLICT(server_name, database_name)
+       DO UPDATE SET enabled = excluded.enabled, require_approval = excluded.require_approval,
+                     updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')`
+    )
+    .run(serverName, databaseName, prefs.enabled ? 1 : 0, prefs.requireApproval ? 1 : 0);
 }
 
 export function clearMcpAudit(serverName: string, databaseName: string): void {
