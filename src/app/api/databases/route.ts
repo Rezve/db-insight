@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { z } from "zod";
 import { getDriver } from "@/lib/db/registry";
 import {
   connectionFieldsSchema,
@@ -7,7 +8,11 @@ import {
   toConnectInput,
 } from "@/lib/connection-schema";
 
-const schema = connectionFieldsSchema.refine(hasRequiredCredentials, {
+const schema = connectionFieldsSchema.extend({
+  // Optional starting database. Contained users (common on Azure SQL) exist
+  // only in their own database and cannot log in to the bootstrap database.
+  database: z.string().trim().optional(),
+}).refine(hasRequiredCredentials, {
   message: "Username and password are required for SQL authentication",
 });
 
@@ -32,13 +37,22 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Enumerating databases needs a connection, so use the engine's bootstrap
-    // database. MySQL can connect without selecting one at all.
-    const config = driver.buildConfig(input, driver.bootstrapDatabase ?? "");
+    // Enumerating databases needs a connection: use the database the user named,
+    // else the engine's bootstrap database. MySQL can connect without one at all.
+    const requested = parsed.data.database || undefined;
+    const config = driver.buildConfig(input, requested ?? driver.bootstrapDatabase ?? "");
     const pool = await driver.createPool(config);
 
     try {
-      const databases = await driver.listDatabases(pool);
+      let databases: string[];
+      try {
+        databases = await driver.listDatabases(pool);
+      } catch (err) {
+        // A restricted user may be able to connect but not enumerate.
+        if (!requested) throw err;
+        databases = [];
+      }
+      if (requested && !databases.includes(requested)) databases.unshift(requested);
       return NextResponse.json({ databases });
     } finally {
       await driver.closePool(pool).catch(() => {});

@@ -24,6 +24,7 @@ interface Credentials {
   port: string;       // string in UI, coerced to number or undefined on submit
   username: string;
   password: string;
+  database: string;   // optional; connect here instead of the bootstrap database
   encrypt: boolean;
   trustServerCertificate: boolean;
 }
@@ -48,6 +49,7 @@ export default function ConnectionForm() {
     port: "",
     username: "",
     password: "",
+    database: "",
     encrypt: false,
     trustServerCertificate: false,
   });
@@ -96,7 +98,7 @@ export default function ConnectionForm() {
       const res = await fetch("/api/databases", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(buildPayload()),
+        body: JSON.stringify({ ...buildPayload(), database: creds.database.trim() || undefined }),
       });
       const data = await res.json();
       if (data.error) {
@@ -105,7 +107,11 @@ export default function ConnectionForm() {
         const dbs: string[] = data.databases ?? [];
         setDatabases(dbs);
         const SYSTEM = new Set(engineDefaults(creds.engine).systemDatabases);
-        setSelectedDb(dbs.find((d) => !SYSTEM.has(d)) ?? dbs[0] ?? "");
+        const requested = creds.database.trim();
+        setSelectedDb(
+          (requested && dbs.includes(requested) ? requested : undefined) ??
+            dbs.find((d) => !SYSTEM.has(d)) ?? dbs[0] ?? ""
+        );
         setFilter("");
         setStep("database");
       }
@@ -413,6 +419,22 @@ export default function ConnectionForm() {
                 </div>
               </>
             )}
+
+            {/* Optional database — needed for contained users (e.g. Azure SQL) */}
+            <div className="space-y-1.5">
+              <Label htmlFor="database">Database <span className="text-muted-foreground font-normal">(optional)</span></Label>
+              <Input
+                id="database"
+                placeholder="e.g., mydb"
+                value={creds.database}
+                onChange={handleInputChange("database")}
+                autoComplete="off"
+                spellCheck={false}
+              />
+              <p className="text-[10px] text-muted-foreground">
+                Required if your login has no access to the server&apos;s default database (e.g. an Azure SQL contained user)
+              </p>
+            </div>
 
             {/* Options */}
             <div className="space-y-2 rounded-md border p-3 bg-muted/30">
